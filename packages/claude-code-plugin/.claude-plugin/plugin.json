@@ -1,0 +1,14 @@
+{
+  "name": "stencil",
+  "version": "0.0.1",
+  "description": "Stencil template management for Claude Code",
+  "skills": [
+    "skills/stencil",
+    "skills/stencil-init",
+    "skills/stencil-create",
+    "skills/stencil-list",
+    "skills/stencil-show",
+    "skills/stencil-run",
+    "skills/stencil-delete"
+  ]
+}
