@@ -35,3 +35,6 @@ coverage/
 
 # private
 prompts/
+
+# Claude local settings
+settings.local.json
