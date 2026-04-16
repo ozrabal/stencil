@@ -1,21 +1,41 @@
-// ContextProvider interface and built-in resolver stubs.
+// ContextProvider implementations (stubs — full logic in Epic 4).
 import type { ContextProvider } from './types.js';
 
 /**
- * Resolves placeholder values from environment variables.
+ * Resolves system-level context variables: date, os, cwd.
+ * Full implementation in Epic 4.
  */
-export class EnvContextProvider implements ContextProvider {
-  resolve(key: string): Promise<string | undefined> {
-    return Promise.resolve(process.env[key]);
+export class SystemContextProvider implements ContextProvider {
+  readonly name = 'System';
+
+  resolve(): Promise<Record<string, string>> {
+    // TODO: implement (Epic 4)
+    return Promise.resolve({});
   }
 }
 
 /**
- * Resolves placeholder values from git metadata (branch, commit, author, etc.).
+ * Resolves git context variables: current_branch, git_user.
+ * Full implementation in Epic 4.
  */
 export class GitContextProvider implements ContextProvider {
-  resolve(_key: string): Promise<string | undefined> {
-    // TODO: implement git context resolution via child_process
-    return Promise.resolve(undefined);
+  readonly name = 'Git';
+
+  resolve(): Promise<Record<string, string>> {
+    // TODO: implement via child_process (Epic 4)
+    return Promise.resolve({});
+  }
+}
+
+/**
+ * Resolves project context variables: project_name, language.
+ * Full implementation in Epic 4.
+ */
+export class ProjectContextProvider implements ContextProvider {
+  readonly name = 'Project';
+
+  resolve(): Promise<Record<string, string>> {
+    // TODO: implement (Epic 4)
+    return Promise.resolve({});
   }
 }

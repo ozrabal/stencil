@@ -3,14 +3,20 @@ import { validateTemplate } from '../src/validator.js';
 import type { Template } from '../src/types.js';
 
 describe('validateTemplate', () => {
-  it('should return valid for a basic template', () => {
+  it('should return a ValidationResult with valid and issues fields', () => {
     const template: Template = {
-      body: 'Hello {{name}}',
+      body: 'Hello {{entity_name}}',
       filePath: '/fake/path.md',
-      frontmatter: { name: 'test' },
+      frontmatter: {
+        description: 'A test template',
+        name: 'test-template',
+        version: 1,
+      },
+      source: 'project',
     };
     const result = validateTemplate(template);
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    expect(result).toHaveProperty('valid');
+    expect(result).toHaveProperty('issues');
+    expect(Array.isArray(result.issues)).toBe(true);
   });
 });

@@ -1,76 +1,111 @@
 // All shared type definitions for @stencil-pm/core
+// Matches architecture spec §3.2 exactly.
 
-/**
- * Represents the frontmatter of a template file.
- */
+// ── Template ──────────────────────────────────────────
+
 export interface TemplateFrontmatter {
-  description?: string;
-  name: string;
+  author?: string;
+  description: string; // human-readable summary
+  name: string; // kebab-case unique identifier
   placeholders?: PlaceholderDefinition[];
   tags?: string[];
-  version?: string;
+  version: number; // template version, starts at 1
 }
 
-/**
- * A placeholder defined in a template's frontmatter.
- */
 export interface PlaceholderDefinition {
-  default?: string;
-  description?: string;
-  key: string;
-  required?: boolean;
-  source?: PlaceholderSource;
+  default?: string; // default value if not provided
+  description: string; // shown during interactive fill
+  name: string; // snake_case identifier
+  options?: string[]; // Phase 3: allowed values for enum
+  required: boolean; // default: true
+  type?: PlaceholderType; // Phase 3: validation type
 }
 
-/**
- * Source from which a placeholder value is resolved.
- */
-export type PlaceholderSource = 'env' | 'git' | 'prompt' | 'static';
+export type PlaceholderType = 'boolean' | 'enum' | 'file_path' | 'number' | 'string';
 
-/**
- * A parsed template, combining frontmatter and body.
- */
 export interface Template {
-  body: string;
-  filePath: string;
+  body: string; // raw body with {{placeholder}} tokens
+  collection?: string; // collection name (from directory)
+  filePath: string; // absolute path to the .md file
   frontmatter: TemplateFrontmatter;
+  source: TemplateSource; // where this template came from
 }
 
-/**
- * A collection groups multiple templates under a named scope.
- */
-export interface Collection {
-  description?: string;
+export type TemplateSource = 'global' | 'project' | 'remote';
+
+// ── Resolution ────────────────────────────────────────
+
+export interface ResolutionInput {
+  /** Context variables auto-resolved from environment */
+  context: Record<string, string>;
+  /** Values explicitly passed by the user (e.g., CLI args) */
+  explicit: Record<string, string>;
+}
+
+export interface ResolvedPlaceholder {
   name: string;
-  templates: Template[];
+  source: 'context' | 'default' | 'explicit' | 'unresolved';
+  value: string;
 }
 
-/**
- * Context values resolved for placeholder substitution.
- */
-export type ResolvedContext = Record<string, string>;
-
-/**
- * Result of a template render operation.
- */
-export interface RenderResult {
-  content: string;
-  unresolvedPlaceholders: string[];
+export interface ResolutionResult {
+  placeholders: ResolvedPlaceholder[]; // resolution details per placeholder
+  resolvedBody: string; // body with all placeholders filled
+  unresolvedCount: number; // how many remain unresolved
 }
 
-/**
- * Provider interface for persisting template data.
- */
+// ── Validation ────────────────────────────────────────
+
+export type ValidationSeverity = 'error' | 'warning';
+
+export interface ValidationIssue {
+  field?: string; // frontmatter field path
+  line?: number; // line number in template file
+  message: string;
+  severity: ValidationSeverity;
+}
+
+export interface ValidationResult {
+  issues: ValidationIssue[];
+  valid: boolean; // true if no errors (warnings OK)
+}
+
+// ── Storage ───────────────────────────────────────────
+
 export interface StorageProvider {
-  deleteTemplate(filePath: string): Promise<void>;
-  listTemplates(directory: string): Promise<string[]>;
-  readTemplate(filePath: string): Promise<string>;
-  writeTemplate(filePath: string, content: string): Promise<void>;
+  deleteTemplate(name: string): Promise<boolean>;
+  getTemplate(name: string): Promise<null | Template>;
+  listTemplates(options?: ListOptions): Promise<Template[]>;
+  saveTemplate(template: Template): Promise<void>;
+  templateExists(name: string): Promise<boolean>;
 }
 
-/**
- * Provider interface for resolving context values.
- */
+export interface ListOptions {
+  collection?: string;
+  searchQuery?: string;
+  source?: TemplateSource;
+  tags?: string[];
+}
+
+// ── Context ───────────────────────────────────────────
+
 export interface ContextProvider {
-  resolve(key: string): Promise<string | undefined>;
+  /** Human-readable name for this provider (e.g., "Git", "VS Code") */
+  name: string;
+
+  /**
+   * Returns all context variables this provider can resolve.
+   * Keys are without the $ctx. prefix (e.g., "project_name", not "$ctx.project_name").
+   */
+  resolve(): Promise<Record<string, string>>;
+}
+
+// ── Configuration ─────────────────────────────────────
+
+export interface StencilConfig {
+  customContext?: Record<string, string>;
+  defaultCollection?: string;
+  placeholderEnd: string; // default: "}}"
+  placeholderStart: string; // default: "{{"
+  version: number;
 }
