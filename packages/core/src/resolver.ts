@@ -1,11 +1,60 @@
 // Placeholder resolution: substitutes {{placeholder}} tokens with resolved values.
-import type { ResolutionInput, ResolutionResult, Template } from './types.js';
+// Architecture §3.5
+import type { ResolutionInput, ResolutionResult, ResolvedPlaceholder, Template } from './types.js';
+
+/** Regex that matches all {{token}} occurrences in a template body. */
+const PLACEHOLDER_REGEX = /\{\{([^}]+)\}\}/g;
 
 /**
  * Resolves all placeholders in a template body using the provided inputs.
- * Full resolution pipeline implemented in Epic 5.
+ *
+ * Resolution priority (highest -> lowest):
+ *   1. explicit
+ *   2. context
+ *   3. default
+ *   4. unresolved
  */
-export function resolveTemplate(_template: Template, _input: ResolutionInput): ResolutionResult {
-  // TODO: implement placeholder resolution pipeline (Epic 5)
-  return { placeholders: [], resolvedBody: '', unresolvedCount: 0 };
+export function resolveTemplate(template: Template, input: ResolutionInput): ResolutionResult {
+  const { context, explicit } = input;
+  const declared = template.frontmatter.placeholders ?? [];
+
+  const resolvedMap = new Map<string, string>();
+  const placeholders: ResolvedPlaceholder[] = [];
+
+  for (const placeholder of declared) {
+    const { default: defaultValue, name } = placeholder;
+    let resolved: ResolvedPlaceholder;
+
+    if (Object.hasOwn(explicit, name) && explicit[name] !== undefined) {
+      resolved = { name, source: 'explicit', value: explicit[name] };
+    } else if (Object.hasOwn(context, name) && context[name] !== undefined) {
+      resolved = { name, source: 'context', value: context[name] };
+    } else if (defaultValue !== undefined) {
+      resolved = { name, source: 'default', value: defaultValue };
+    } else {
+      resolved = { name, source: 'unresolved', value: '' };
+    }
+
+    placeholders.push(resolved);
+    if (resolved.source !== 'unresolved') {
+      resolvedMap.set(name, resolved.value);
+    }
+  }
+
+  const unresolvedCount = placeholders.filter(
+    (placeholder) => placeholder.source === 'unresolved',
+  ).length;
+
+  const resolvedBody = template.body.replace(PLACEHOLDER_REGEX, (match, token: string) => {
+    const trimmed = token.trim();
+
+    if (trimmed.startsWith('$ctx.')) {
+      const key = trimmed.slice('$ctx.'.length);
+      return context[key] ?? match;
+    }
+
+    return resolvedMap.get(trimmed) ?? match;
+  });
+
+  return { placeholders, resolvedBody, unresolvedCount };
 }
