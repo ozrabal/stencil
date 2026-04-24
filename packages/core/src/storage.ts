@@ -28,6 +28,11 @@ export class LocalStorageProvider implements StorageProvider {
     private readonly globalDir?: string,
   ) {}
 
+  /** Returns the absolute path to the project's stencil directory. */
+  getProjectDir(): string {
+    return this.projectDir;
+  }
+
   async listTemplates(options?: ListOptions): Promise<Template[]> {
     const projectTemplates = await loadTemplatesFromDir(this.projectDir, 'project');
     const globalTemplates = this.globalDir
