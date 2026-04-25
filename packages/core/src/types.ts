@@ -109,3 +109,16 @@ export interface StencilConfig {
   placeholderStart: string; // default: "{{"
   version: number;
 }
+
+// ── Public API ─────────────────────────────────────────
+
+export interface StencilOptions {
+  /** Partial config overrides. */
+  config?: Partial<StencilConfig>;
+  /** Additional context providers registered by the adapter. Override built-ins on collision. */
+  contextProviders?: ContextProvider[];
+  /** Path to the global templates directory (e.g. ~/.stencil/). Optional. */
+  globalDir?: string;
+  /** Path to the project root directory (Stencil appends .stencil/ internally). */
+  projectDir: string;
+}
