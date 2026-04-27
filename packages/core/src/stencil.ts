@@ -9,9 +9,12 @@ import type {
   TemplateFrontmatter,
   ValidationResult,
 } from './types.js';
+import type { StencilConfig } from './types.js';
 
 import { CollectionManager } from './collections.js';
+import { loadStencilConfig } from './config.js';
 import {
+  ConfigContextProvider,
   ContextEngine,
   GitContextProvider,
   ProjectContextProvider,
@@ -30,16 +33,28 @@ export class Stencil {
   readonly context: ContextEngine;
   readonly storage: LocalStorageProvider;
 
+  private readonly configOverrides: Partial<StencilConfig> | undefined;
+  private readonly globalDir: string | undefined;
   private readonly stencilDir: string;
+  private runtimeConfig: StencilConfig | undefined;
+  private runtimeInitPromise: Promise<void> | undefined;
 
   constructor(options: StencilOptions) {
     this.stencilDir = path.join(options.projectDir, '.stencil');
-    this.storage = new LocalStorageProvider(this.stencilDir, options.globalDir);
+    this.globalDir = options.globalDir;
+    this.configOverrides = options.config;
+    this.storage = new LocalStorageProvider(this.stencilDir, this.globalDir);
 
     this.context = new ContextEngine();
     this.context.register(new SystemContextProvider());
     this.context.register(new GitContextProvider());
     this.context.register(new ProjectContextProvider());
+    this.context.register(
+      new ConfigContextProvider(async () => {
+        await this.ensureRuntimeReady();
+        return this.runtimeConfig?.customContext ?? {};
+      }),
+    );
 
     for (const provider of options.contextProviders ?? []) {
       this.context.register(provider);
@@ -49,6 +64,7 @@ export class Stencil {
   }
 
   async init(): Promise<void> {
+    await this.ensureRuntimeReady();
     await mkdir(path.join(this.stencilDir, 'templates'), { recursive: true });
   }
 
@@ -56,6 +72,8 @@ export class Stencil {
     templateName: string,
     explicitValues: Record<string, string>,
   ): Promise<ResolutionResult> {
+    await this.ensureRuntimeReady();
+
     const template = await this.storage.getTemplate(templateName);
     if (template === null) {
       throw new Error(`Template not found: "${templateName}"`);
@@ -81,14 +99,17 @@ export class Stencil {
     body: string,
     collection?: string,
   ): Promise<Template> {
+    await this.ensureRuntimeReady();
+
     const template: Template = {
       body,
       filePath: '',
       frontmatter,
       source: 'project',
     };
-    if (collection !== undefined) {
-      template.collection = collection;
+    const resolvedCollection = collection ?? this.runtimeConfig?.defaultCollection;
+    if (resolvedCollection !== undefined) {
+      template.collection = resolvedCollection;
     }
 
     const validation = validateTemplate(template);
@@ -131,5 +152,28 @@ export class Stencil {
 
   async search(query: string): Promise<Template[]> {
     return this.storage.listTemplates({ searchQuery: query });
+  }
+
+  private async ensureRuntimeReady(): Promise<void> {
+    if (this.runtimeConfig) {
+      return;
+    }
+
+    if (!this.runtimeInitPromise) {
+      this.runtimeInitPromise = this.initializeRuntime().catch((error) => {
+        this.runtimeInitPromise = undefined;
+        throw error;
+      });
+    }
+
+    await this.runtimeInitPromise;
+  }
+
+  private async initializeRuntime(): Promise<void> {
+    this.runtimeConfig = await loadStencilConfig(
+      this.stencilDir,
+      this.globalDir,
+      this.configOverrides,
+    );
   }
 }

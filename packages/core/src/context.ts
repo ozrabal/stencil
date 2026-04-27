@@ -49,6 +49,42 @@ export class ContextEngine {
   }
 }
 
+// ── StaticContextProvider ─────────────────────────────
+
+/** Resolves a fixed set of context variables provided at construction time. */
+export class StaticContextProvider implements ContextProvider {
+  readonly name: string;
+
+  constructor(
+    private readonly values: Record<string, string>,
+    name = 'Static',
+  ) {
+    this.name = name;
+  }
+
+  resolve(): Promise<Record<string, string>> {
+    return Promise.resolve(this.values);
+  }
+}
+
+// ── ConfigContextProvider ─────────────────────────────
+
+/** Resolves config-backed context values via a lazy callback. */
+export class ConfigContextProvider implements ContextProvider {
+  readonly name: string;
+
+  constructor(
+    private readonly resolveValues: () => Promise<Record<string, string>> | Record<string, string>,
+    name = 'Config',
+  ) {
+    this.name = name;
+  }
+
+  resolve(): Promise<Record<string, string>> {
+    return Promise.resolve(this.resolveValues());
+  }
+}
+
 // ── SystemContextProvider ─────────────────────────────
 
 /** Resolves system-level context variables: date, os, cwd. */

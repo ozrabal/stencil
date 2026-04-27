@@ -5,9 +5,11 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ConfigContextProvider,
   ContextEngine,
   GitContextProvider,
   ProjectContextProvider,
+  StaticContextProvider,
   SystemContextProvider,
 } from '../src/context.js';
 import type { ContextProvider } from '../src/types.js';
@@ -68,6 +70,20 @@ describe('ContextEngine — resolveAll', () => {
     engine.register(makeProvider('Good', { ok: 'yes' }));
 
     await expect(engine.resolveAll()).resolves.toEqual({ ok: 'yes' });
+  });
+
+  it('resolves values from StaticContextProvider', async () => {
+    const engine = new ContextEngine();
+    engine.register(new StaticContextProvider({ team_name: 'Platform' }, 'Config'));
+
+    await expect(engine.resolveAll()).resolves.toEqual({ team_name: 'Platform' });
+  });
+
+  it('resolves values from ConfigContextProvider lazily', async () => {
+    const engine = new ContextEngine();
+    engine.register(new ConfigContextProvider(async () => ({ jira_project: 'PLAT' }), 'Config'));
+
+    await expect(engine.resolveAll()).resolves.toEqual({ jira_project: 'PLAT' });
   });
 });
 

@@ -1,8 +1,9 @@
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { StencilConfigError } from '../src/config.js';
 import { Stencil } from '../src/stencil.js';
 import { LocalStorageProvider } from '../src/storage.js';
 import type { ContextProvider, TemplateFrontmatter } from '../src/types.js';
@@ -38,6 +39,11 @@ function makeFrontmatter(
     version: 1,
     ...overrides,
   };
+}
+
+async function writeStencilConfig(stencilDir: string, content: string): Promise<void> {
+  await mkdir(stencilDir, { recursive: true });
+  await writeFile(path.join(stencilDir, 'config.yaml'), content, 'utf8');
 }
 
 describe('Stencil constructor', () => {
@@ -161,6 +167,34 @@ describe('Stencil.create()', () => {
     expect(created.frontmatter.tags).toEqual(['backend']);
     expect(created.frontmatter.version).toBe(2);
     expect(created.frontmatter.placeholders).toHaveLength(1);
+  });
+
+  it('uses default_collection from project config when collection is omitted', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["default_collection: 'backend'"].join('\n'),
+    );
+
+    const created = await stencil.create(makeFrontmatter('config-default'), 'Body text');
+
+    expect(created.collection).toBe('backend');
+    expect(created.filePath).toContain(`${path.sep}collections${path.sep}backend${path.sep}`);
+  });
+
+  it('prefers an explicit collection over default_collection from config', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["default_collection: 'backend'"].join('\n'),
+    );
+
+    const created = await stencil.create(
+      makeFrontmatter('explicit-collection'),
+      'Body text',
+      'docs',
+    );
+
+    expect(created.collection).toBe('docs');
+    expect(created.filePath).toContain(`${path.sep}collections${path.sep}docs${path.sep}`);
   });
 });
 
@@ -349,6 +383,71 @@ describe('Stencil.resolve()', () => {
     expect(result.resolvedBody).toBe('Generated on 2026-01-01');
   });
 
+  it('resolves custom_context values from config files as $ctx variables', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ['custom_context:', "  team_name: 'Platform'"].join('\n'),
+    );
+    await stencil.create(makeFrontmatter('config-context'), 'Team: {{$ctx.team_name}}');
+
+    const result = await stencil.resolve('config-context', {});
+    expect(result.resolvedBody).toBe('Team: Platform');
+  });
+
+  it('merges global and project custom_context with project precedence', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-config');
+
+    try {
+      await writeStencilConfig(
+        path.join(globalProjectDir, '.stencil'),
+        ['custom_context:', "  team_name: 'Platform'", "  jira_project: 'PLAT'"].join('\n'),
+      );
+      await writeStencilConfig(
+        path.join(projectDir, '.stencil'),
+        ['custom_context:', "  jira_project: 'CORE'", "  release_train: 'spring-26'"].join('\n'),
+      );
+
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      await stencilWithGlobal.create(
+        makeFrontmatter('merged-config-context'),
+        'Team {{$ctx.team_name}} / Jira {{$ctx.jira_project}} / Train {{$ctx.release_train}}',
+      );
+
+      const result = await stencilWithGlobal.resolve('merged-config-context', {});
+      expect(result.resolvedBody).toBe('Team Platform / Jira CORE / Train spring-26');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
+  it('applies runtime config overrides after file-based config', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ['custom_context:', "  team_name: 'Platform'"].join('\n'),
+    );
+
+    const stencilWithOverrides = new Stencil({
+      config: {
+        customContext: {
+          team_name: 'Core',
+        },
+      },
+      projectDir,
+    });
+
+    await stencilWithOverrides.create(
+      makeFrontmatter('override-config-context'),
+      'Team: {{$ctx.team_name}}',
+    );
+
+    const result = await stencilWithOverrides.resolve('override-config-context', {});
+    expect(result.resolvedBody).toBe('Team: Core');
+  });
+
   it('returns unresolvedCount when a required placeholder has no value', async () => {
     const frontmatter: TemplateFrontmatter = {
       description: 'Needs input',
@@ -395,6 +494,15 @@ describe('Stencil.resolve()', () => {
 
     const result = await stencil.resolve('warn-resolve', {});
     expect(result.resolvedBody).toBe('No placeholder token');
+  });
+
+  it('throws a typed config error when project config is invalid', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ['custom_context:', '  retries: 3'].join('\n'),
+    );
+
+    await expect(stencil.init()).rejects.toBeInstanceOf(StencilConfigError);
   });
 });
 
@@ -499,6 +607,31 @@ describe('Stencil globalDir support', () => {
       const fetched = await stencilWithGlobal.get('shared-name');
       expect(fetched?.body).toBe('Project version');
       expect(fetched?.source).toBe('project');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
+  it('applies project config over global config for default_collection', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-default-config');
+
+    try {
+      await writeStencilConfig(
+        path.join(globalProjectDir, '.stencil'),
+        ["default_collection: 'review'"].join('\n'),
+      );
+      await writeStencilConfig(
+        path.join(projectDir, '.stencil'),
+        ["default_collection: 'backend'"].join('\n'),
+      );
+
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      const created = await stencilWithGlobal.create(makeFrontmatter('config-precedence'), 'Body');
+      expect(created.collection).toBe('backend');
     } finally {
       await rm(globalProjectDir, { force: true, recursive: true });
     }
