@@ -497,7 +497,7 @@ export class Stencil {
 
 export interface StencilOptions {
   projectDir: string; // path to project root (contains .stencil/)
-  globalDir?: string; // path to global templates (default: ~/.stencil/)
+  globalDir?: string | null; // omitted => ~/.stencil/, string => explicit dir, null => disable global lookup
   config?: Partial<StencilConfig>;
   contextProviders?: ContextProvider[]; // additional providers from adapter
 }
@@ -726,7 +726,6 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initialize core with VS Code context provider
   const stencil = new Stencil({
     projectDir: workspaceRoot,
-    globalDir: path.join(os.homedir(), '.stencil'),
     contextProviders: [new VSCodeContextProvider()],
   });
 
