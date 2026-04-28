@@ -20,6 +20,7 @@ import {
   ProjectContextProvider,
   SystemContextProvider,
 } from './context.js';
+import { resolveGlobalStencilDir } from './paths.js';
 import { resolveTemplate } from './resolver.js';
 import { LocalStorageProvider } from './storage.js';
 import { validateTemplate } from './validator.js';
@@ -41,7 +42,7 @@ export class Stencil {
 
   constructor(options: StencilOptions) {
     this.stencilDir = path.join(options.projectDir, '.stencil');
-    this.globalDir = options.globalDir;
+    this.globalDir = resolveGlobalStencilDir(options.globalDir);
     this.configOverrides = options.config;
     this.storage = new LocalStorageProvider(this.stencilDir, this.globalDir);
 

@@ -117,8 +117,13 @@ export interface StencilOptions {
   config?: Partial<StencilConfig>;
   /** Additional context providers registered by the adapter. Override built-ins on collision. */
   contextProviders?: ContextProvider[];
-  /** Path to the global templates directory (e.g. ~/.stencil/). Optional. */
-  globalDir?: string;
+  /**
+   * Global stencil directory behavior:
+   * - omitted: auto-discover ~/.stencil/
+   * - string: use the explicit directory
+   * - null: disable global lookup
+   */
+  globalDir?: null | string;
   /** Path to the project root directory (Stencil appends .stencil/ internally). */
   projectDir: string;
 }

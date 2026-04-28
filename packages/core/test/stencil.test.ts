@@ -46,6 +46,22 @@ async function writeStencilConfig(stencilDir: string, content: string): Promise<
   await writeFile(path.join(stencilDir, 'config.yaml'), content, 'utf8');
 }
 
+async function saveTemplateInDir(
+  stencilDir: string,
+  name: string,
+  body: string,
+  collection?: string,
+): Promise<void> {
+  const storage = new LocalStorageProvider(stencilDir);
+  await storage.saveTemplate({
+    body,
+    collection,
+    filePath: '',
+    frontmatter: makeFrontmatter(name),
+    source: 'project',
+  });
+}
+
 describe('Stencil constructor', () => {
   it('exposes context as a readonly property', () => {
     expect(stencil.context).toBeDefined();
@@ -253,6 +269,97 @@ describe('Stencil.get()', () => {
   it('returns null for an unknown template name', async () => {
     expect(await stencil.get('does-not-exist')).toBeNull();
   });
+
+  it('auto-discovers ~/.stencil when globalDir is omitted', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+
+    try {
+      process.env.HOME = tempHome;
+      await saveTemplateInDir(path.join(tempHome, '.stencil'), 'global-only', 'Global body');
+
+      const stencilWithDiscoveredGlobal = new Stencil({ projectDir });
+      const template = await stencilWithDiscoveredGlobal.get('global-only');
+
+      expect(template).not.toBeNull();
+      expect(template?.frontmatter.name).toBe('global-only');
+      expect(template?.source).toBe('global');
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
+    }
+  });
+
+  it('prefers project templates over auto-discovered global templates', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+
+    try {
+      process.env.HOME = tempHome;
+      await saveTemplateInDir(path.join(tempHome, '.stencil'), 'shared-template', 'Global body');
+      await stencil.create(makeFrontmatter('shared-template'), 'Project body');
+
+      const template = await stencil.get('shared-template');
+
+      expect(template).not.toBeNull();
+      expect(template?.body).toBe('Project body');
+      expect(template?.source).toBe('project');
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
+    }
+  });
+
+  it('uses the explicit globalDir instead of the discovered default', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+    const explicitGlobalDir = await makeTempDir('stencil-explicit-global');
+
+    try {
+      process.env.HOME = tempHome;
+      await saveTemplateInDir(
+        path.join(tempHome, '.stencil'),
+        'discovered-only',
+        'Discovered body',
+      );
+      await saveTemplateInDir(explicitGlobalDir, 'explicit-only', 'Explicit body');
+
+      const stencilWithExplicitGlobal = new Stencil({
+        globalDir: explicitGlobalDir,
+        projectDir,
+      });
+
+      await expect(stencilWithExplicitGlobal.get('discovered-only')).resolves.toBeNull();
+
+      const explicitTemplate = await stencilWithExplicitGlobal.get('explicit-only');
+      expect(explicitTemplate).not.toBeNull();
+      expect(explicitTemplate?.source).toBe('global');
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
+      await rm(explicitGlobalDir, { force: true, recursive: true });
+    }
+  });
+
+  it('disables global template lookup when globalDir is null', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+
+    try {
+      process.env.HOME = tempHome;
+      await saveTemplateInDir(path.join(tempHome, '.stencil'), 'global-only', 'Global body');
+
+      const projectOnlyStencil = new Stencil({
+        globalDir: null,
+        projectDir,
+      });
+
+      await expect(projectOnlyStencil.get('global-only')).resolves.toBeNull();
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
+    }
+  });
 });
 
 describe('Stencil.delete()', () => {
@@ -421,6 +528,64 @@ describe('Stencil.resolve()', () => {
       expect(result.resolvedBody).toBe('Team Platform / Jira CORE / Train spring-26');
     } finally {
       await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
+  it('merges auto-discovered global config with project config using project precedence', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+
+    try {
+      process.env.HOME = tempHome;
+      await writeStencilConfig(
+        path.join(tempHome, '.stencil'),
+        ['custom_context:', "  team_name: 'Platform'", "  jira_project: 'PLAT'"].join('\n'),
+      );
+      await writeStencilConfig(
+        path.join(projectDir, '.stencil'),
+        ['custom_context:', "  jira_project: 'CORE'", "  release_train: 'spring-26'"].join('\n'),
+      );
+
+      const stencilWithDiscoveredGlobal = new Stencil({ projectDir });
+      await stencilWithDiscoveredGlobal.create(
+        makeFrontmatter('auto-global-config'),
+        'Team {{$ctx.team_name}} / Jira {{$ctx.jira_project}} / Train {{$ctx.release_train}}',
+      );
+
+      const result = await stencilWithDiscoveredGlobal.resolve('auto-global-config', {});
+      expect(result.resolvedBody).toBe('Team Platform / Jira CORE / Train spring-26');
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
+    }
+  });
+
+  it('disables auto-discovered global config when globalDir is null', async () => {
+    const previousHome = process.env.HOME;
+    const tempHome = await makeTempDir('stencil-home');
+
+    try {
+      process.env.HOME = tempHome;
+      await writeStencilConfig(
+        path.join(tempHome, '.stencil'),
+        ['custom_context:', "  team_name: 'Platform'"].join('\n'),
+      );
+
+      const projectOnlyStencil = new Stencil({
+        globalDir: null,
+        projectDir,
+      });
+      await projectOnlyStencil.create(
+        makeFrontmatter('project-only-config'),
+        'Team: {{$ctx.team_name}}',
+      );
+
+      const result = await projectOnlyStencil.resolve('project-only-config', {});
+      expect(result.resolvedBody).toBe('Team: {{$ctx.team_name}}');
+      expect(result.placeholders).toEqual([]);
+    } finally {
+      process.env.HOME = previousHome;
+      await rm(tempHome, { force: true, recursive: true });
     }
   });
 
