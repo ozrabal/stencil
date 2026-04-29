@@ -87,6 +87,23 @@ export interface ListOptions {
   tags?: string[];
 }
 
+export interface UpdateTemplateInput {
+  body?: string;
+  collection?: null | string;
+  frontmatter?: Partial<Omit<TemplateFrontmatter, 'name'>>;
+}
+
+export interface CopyTemplateOptions {
+  body?: string;
+  collection?: null | string;
+  frontmatter?: Partial<Omit<TemplateFrontmatter, 'name'>>;
+  overwrite?: boolean;
+}
+
+export interface RenameTemplateOptions {
+  overwrite?: boolean;
+}
+
 // ── Context ───────────────────────────────────────────
 
 export interface ContextProvider {

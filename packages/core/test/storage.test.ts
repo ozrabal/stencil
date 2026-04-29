@@ -448,3 +448,132 @@ describe('LocalStorageProvider getTemplate', () => {
     expect(result?.collection).toBe('docs');
   });
 });
+
+describe('LocalStorageProvider project-scoped helpers', () => {
+  it('getProjectTemplate returns the project copy when both project and global exist', async () => {
+    const globalDir = await makeTempDir();
+    try {
+      const storage = new LocalStorageProvider(tmpDir, globalDir);
+      await new LocalStorageProvider(globalDir).saveTemplate(
+        makeTemplate({
+          frontmatter: {
+            description: 'Global version',
+            name: 'shared-template',
+            version: 1,
+          },
+          name: 'shared-template',
+        }),
+      );
+      await storage.saveTemplate(
+        makeTemplate({
+          frontmatter: {
+            description: 'Project version',
+            name: 'shared-template',
+            version: 2,
+          },
+          name: 'shared-template',
+        }),
+      );
+
+      const result = await storage.getProjectTemplate('shared-template');
+      expect(result?.source).toBe('project');
+      expect(result?.frontmatter.version).toBe(2);
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+
+  it('getProjectTemplate returns null when the template exists only globally', async () => {
+    const globalDir = await makeTempDir();
+    try {
+      const storage = new LocalStorageProvider(tmpDir, globalDir);
+      await new LocalStorageProvider(globalDir).saveTemplate(makeTemplate({ name: 'global-only' }));
+
+      await expect(storage.getProjectTemplate('global-only')).resolves.toBeNull();
+      const visible = await storage.getTemplate('global-only');
+      expect(visible?.source).toBe('global');
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+
+  it('renameProjectTemplate renames uncategorized templates in place', async () => {
+    const storage = new LocalStorageProvider(tmpDir);
+    await storage.saveTemplate(makeTemplate({ name: 'draft-template' }));
+
+    const renamedTemplate = makeTemplate({ name: 'published-template' });
+    expect(await storage.renameProjectTemplate('draft-template', renamedTemplate)).toBe(true);
+
+    expect(await storage.getTemplate('draft-template')).toBeNull();
+    const renamed = await storage.getTemplate('published-template');
+    expect(renamed?.frontmatter.name).toBe('published-template');
+    expect(renamed?.filePath).toBe(path.join(tmpDir, 'templates', 'published-template.md'));
+  });
+
+  it('renameProjectTemplate preserves collection placement', async () => {
+    const storage = new LocalStorageProvider(tmpDir);
+    await storage.saveTemplate(makeTemplate({ collection: 'backend', name: 'endpoint-draft' }));
+
+    const renamedTemplate = makeTemplate({
+      collection: 'backend',
+      name: 'endpoint-final',
+    });
+    expect(await storage.renameProjectTemplate('endpoint-draft', renamedTemplate)).toBe(true);
+
+    expect(await storage.getTemplate('endpoint-draft')).toBeNull();
+    const renamed = await storage.getTemplate('endpoint-final');
+    expect(renamed?.collection).toBe('backend');
+    expect(renamed?.filePath).toBe(
+      path.join(tmpDir, 'collections', 'backend', 'endpoint-final.md'),
+    );
+  });
+
+  it('renameProjectTemplate overwrites a project target without affecting a global file', async () => {
+    const globalDir = await makeTempDir();
+    try {
+      const storage = new LocalStorageProvider(tmpDir, globalDir);
+      await storage.saveTemplate(makeTemplate({ name: 'source-template' }));
+      await storage.saveTemplate(
+        makeTemplate({
+          frontmatter: {
+            description: 'Project target',
+            name: 'target-template',
+            version: 3,
+          },
+          name: 'target-template',
+        }),
+      );
+      await new LocalStorageProvider(globalDir).saveTemplate(
+        makeTemplate({
+          frontmatter: {
+            description: 'Global target',
+            name: 'target-template',
+            version: 9,
+          },
+          name: 'target-template',
+        }),
+      );
+
+      const renamedTemplate = makeTemplate({
+        frontmatter: {
+          description: 'Renamed source',
+          name: 'target-template',
+          version: 1,
+        },
+        name: 'target-template',
+      });
+      expect(await storage.renameProjectTemplate('source-template', renamedTemplate, true)).toBe(
+        true,
+      );
+
+      const projectResult = await storage.getProjectTemplate('target-template');
+      expect(projectResult?.frontmatter.description).toBe('Renamed source');
+
+      const globalResult = await new LocalStorageProvider(globalDir).getTemplate('target-template');
+      expect(globalResult?.frontmatter.description).toBe('Global target');
+      expect(await storage.getTemplate('source-template')).toBeNull();
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+});

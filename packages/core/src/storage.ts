@@ -1,5 +1,5 @@
 // LocalStorageProvider: filesystem-based StorageProvider.
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 
@@ -88,10 +88,43 @@ export class LocalStorageProvider implements StorageProvider {
     return null;
   }
 
+  async getProjectTemplate(name: string): Promise<null | Template> {
+    return findAndParseTemplate(name, this.projectDir, 'project');
+  }
+
   async saveTemplate(template: Template): Promise<void> {
     const filePath = resolveTemplatePath(this.projectDir, template);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, serializeTemplate(template), 'utf8');
+  }
+
+  async renameProjectTemplate(
+    sourceName: string,
+    targetTemplate: Template,
+    overwrite = false,
+  ): Promise<boolean> {
+    const sourcePath = await findTemplatePath(sourceName, this.projectDir);
+    if (sourcePath === null) {
+      return false;
+    }
+
+    const targetPath = resolveTemplatePath(this.projectDir, targetTemplate);
+    if (sourcePath !== targetPath && !overwrite && (await fileExists(targetPath))) {
+      throw new Error(`Template already exists at target path: ${targetPath}`);
+    }
+
+    await mkdir(path.dirname(targetPath), { recursive: true });
+
+    if (sourcePath !== targetPath) {
+      if (overwrite && (await fileExists(targetPath))) {
+        await rm(targetPath);
+      }
+
+      await rename(sourcePath, targetPath);
+    }
+
+    await writeFile(targetPath, serializeTemplate(targetTemplate), 'utf8');
+    return true;
   }
 
   async deleteTemplate(name: string): Promise<boolean> {

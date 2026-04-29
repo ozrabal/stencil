@@ -385,6 +385,276 @@ describe('Stencil.delete()', () => {
   });
 });
 
+describe('Stencil.update()', () => {
+  it('updates body and frontmatter while preserving unspecified fields', async () => {
+    await stencil.create(
+      makeFrontmatter('update-me', {
+        author: 'alice',
+        placeholders: [{ description: 'Entity', name: 'entity', required: true }],
+        tags: ['backend'],
+      }),
+      'Original body',
+    );
+
+    const updated = await stencil.update('update-me', {
+      body: 'Updated body',
+      frontmatter: {
+        description: 'Updated description',
+        tags: ['backend', 'api'],
+      },
+    });
+
+    expect(updated.body).toBe('Updated body');
+    expect(updated.frontmatter.description).toBe('Updated description');
+    expect(updated.frontmatter.tags).toEqual(['backend', 'api']);
+    expect(updated.frontmatter.author).toBe('alice');
+    expect(updated.frontmatter.placeholders).toEqual([
+      { description: 'Entity', name: 'entity', required: true },
+    ]);
+    expect(updated.frontmatter.version).toBe(1);
+    expect(updated.source).toBe('project');
+  });
+
+  it('moves a template into a collection', async () => {
+    await stencil.create(makeFrontmatter('move-into-collection'), 'Body');
+
+    const updated = await stencil.update('move-into-collection', { collection: 'backend' });
+
+    expect(updated.collection).toBe('backend');
+    expect(updated.filePath).toContain(`${path.sep}collections${path.sep}backend${path.sep}`);
+  });
+
+  it('moves a template out of a collection with collection: null', async () => {
+    await stencil.create(makeFrontmatter('move-out-of-collection'), 'Body', 'backend');
+
+    const updated = await stencil.update('move-out-of-collection', { collection: null });
+
+    expect(updated.collection).toBeUndefined();
+    expect(updated.filePath).toContain(`${path.sep}templates${path.sep}`);
+  });
+
+  it('rejects invalid final frontmatter', async () => {
+    await stencil.create(makeFrontmatter('invalid-update'), 'Body');
+
+    await expect(
+      stencil.update('invalid-update', {
+        frontmatter: {
+          description: '',
+        },
+      }),
+    ).rejects.toThrow('Cannot update template');
+  });
+
+  it('rejects updates for templates that exist only globally', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-update');
+
+    try {
+      await saveTemplateInDir(
+        path.join(globalProjectDir, '.stencil'),
+        'global-update-only',
+        'Global body',
+      );
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      await expect(
+        stencilWithGlobal.update('global-update-only', { body: 'Updated body' }),
+      ).rejects.toThrow('global directory only');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe('Stencil.copy()', () => {
+  it('copies a project template under a new name', async () => {
+    await stencil.create(makeFrontmatter('copy-source'), 'Copy body');
+
+    const copied = await stencil.copy('copy-source', 'copy-target');
+
+    expect(copied.frontmatter.name).toBe('copy-target');
+    expect(copied.body).toBe('Copy body');
+    expect(copied.source).toBe('project');
+    expect((await stencil.get('copy-source'))?.frontmatter.name).toBe('copy-source');
+  });
+
+  it('copies a global template into project storage under a new name', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-copy');
+
+    try {
+      await saveTemplateInDir(
+        path.join(globalProjectDir, '.stencil'),
+        'global-copy-source',
+        'Global body',
+      );
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      const copied = await stencilWithGlobal.copy('global-copy-source', 'project-copy');
+
+      expect(copied.frontmatter.name).toBe('project-copy');
+      expect(copied.body).toBe('Global body');
+      expect(copied.source).toBe('project');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
+  it('copies with collection, body, and frontmatter overrides', async () => {
+    await stencil.create(makeFrontmatter('copy-overrides', { tags: ['draft'] }), 'Original body');
+
+    const copied = await stencil.copy('copy-overrides', 'copy-overrides-target', {
+      body: 'Overridden body',
+      collection: 'docs',
+      frontmatter: {
+        description: 'Copied description',
+        tags: ['published'],
+      },
+    });
+
+    expect(copied.body).toBe('Overridden body');
+    expect(copied.collection).toBe('docs');
+    expect(copied.frontmatter.description).toBe('Copied description');
+    expect(copied.frontmatter.tags).toEqual(['published']);
+  });
+
+  it('rejects invalid copied results', async () => {
+    await stencil.create(makeFrontmatter('invalid-copy-source'), 'Body');
+
+    await expect(
+      stencil.copy('invalid-copy-source', 'invalid-copy-target', {
+        frontmatter: { description: '' },
+      }),
+    ).rejects.toThrow('Cannot copy template');
+  });
+
+  it('rejects target collisions by default', async () => {
+    await stencil.create(makeFrontmatter('copy-collision-source'), 'Source');
+    await stencil.create(makeFrontmatter('copy-collision-target'), 'Target');
+
+    await expect(stencil.copy('copy-collision-source', 'copy-collision-target')).rejects.toThrow(
+      'already exists in the project directory',
+    );
+  });
+
+  it('overwrites an existing project target only when overwrite is true', async () => {
+    await stencil.create(makeFrontmatter('overwrite-source'), 'Source body');
+    await stencil.create(makeFrontmatter('overwrite-target'), 'Old target body');
+
+    const copied = await stencil.copy('overwrite-source', 'overwrite-target', {
+      overwrite: true,
+    });
+
+    expect(copied.body).toBe('Source body');
+    expect(copied.frontmatter.name).toBe('overwrite-target');
+  });
+
+  it('rejects overwrite when the colliding target is global-only', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-copy-target');
+
+    try {
+      await stencil.create(makeFrontmatter('copy-global-source'), 'Source body');
+      await saveTemplateInDir(
+        path.join(globalProjectDir, '.stencil'),
+        'copy-global-target',
+        'Global target body',
+      );
+
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      await expect(
+        stencilWithGlobal.copy('copy-global-source', 'copy-global-target', {
+          overwrite: true,
+        }),
+      ).rejects.toThrow('global directory');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe('Stencil.rename()', () => {
+  it('renames a project template and removes the old name', async () => {
+    await stencil.create(makeFrontmatter('rename-source'), 'Rename body');
+
+    const renamed = await stencil.rename('rename-source', 'rename-target');
+
+    expect(renamed.frontmatter.name).toBe('rename-target');
+    expect(await stencil.get('rename-source')).toBeNull();
+    expect((await stencil.get('rename-target'))?.body).toBe('Rename body');
+  });
+
+  it('preserves body, frontmatter fields, and collection placement', async () => {
+    await stencil.create(
+      makeFrontmatter('rename-keep-fields', {
+        author: 'alice',
+        tags: ['backend'],
+      }),
+      'Keep this body',
+      'backend',
+    );
+
+    const renamed = await stencil.rename('rename-keep-fields', 'rename-keep-fields-final');
+
+    expect(renamed.body).toBe('Keep this body');
+    expect(renamed.frontmatter.author).toBe('alice');
+    expect(renamed.frontmatter.tags).toEqual(['backend']);
+    expect(renamed.collection).toBe('backend');
+    expect(renamed.filePath).toContain(`${path.sep}collections${path.sep}backend${path.sep}`);
+  });
+
+  it('rejects rename of a global-only template', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-rename');
+
+    try {
+      await saveTemplateInDir(
+        path.join(globalProjectDir, '.stencil'),
+        'global-rename-only',
+        'Global body',
+      );
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      await expect(
+        stencilWithGlobal.rename('global-rename-only', 'global-rename-target'),
+      ).rejects.toThrow('global directory only');
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects collisions by default', async () => {
+    await stencil.create(makeFrontmatter('rename-collision-source'), 'Source');
+    await stencil.create(makeFrontmatter('rename-collision-target'), 'Target');
+
+    await expect(
+      stencil.rename('rename-collision-source', 'rename-collision-target'),
+    ).rejects.toThrow('already exists in the project directory');
+  });
+
+  it('allows overwrite only for project targets', async () => {
+    await stencil.create(makeFrontmatter('rename-overwrite-source'), 'Source body');
+    await stencil.create(makeFrontmatter('rename-overwrite-target'), 'Old target body');
+
+    const renamed = await stencil.rename('rename-overwrite-source', 'rename-overwrite-target', {
+      overwrite: true,
+    });
+
+    expect(renamed.frontmatter.name).toBe('rename-overwrite-target');
+    expect(renamed.body).toBe('Source body');
+    expect(await stencil.get('rename-overwrite-source')).toBeNull();
+  });
+});
+
 describe('Stencil.validate()', () => {
   it('returns valid result for a well-formed template', async () => {
     await stencil.create(makeFrontmatter('valid-tmpl'), 'Body text');
@@ -871,5 +1141,54 @@ describe('Stencil end-to-end happy path', () => {
     expect(await stencil.delete('create-rest-endpoint')).toBe(true);
     expect(await stencil.get('create-rest-endpoint')).toBeNull();
     expect(await stencil.list()).toHaveLength(0);
+  });
+
+  it('runs create, update, copy, rename, validate, list, and delete coherently', async () => {
+    await stencil.init();
+
+    const created = await stencil.create(
+      makeFrontmatter('workflow-template', {
+        tags: ['draft'],
+      }),
+      'Initial {{item}} body',
+    );
+    expect(created.frontmatter.name).toBe('workflow-template');
+
+    const updated = await stencil.update('workflow-template', {
+      body: 'Updated {{item}} body',
+      collection: 'backend',
+      frontmatter: {
+        description: 'Updated workflow template',
+        tags: ['backend'],
+      },
+    });
+    expect(updated.collection).toBe('backend');
+    expect(updated.frontmatter.description).toBe('Updated workflow template');
+
+    const copied = await stencil.copy('workflow-template', 'workflow-template-copy', {
+      frontmatter: {
+        description: 'Copied workflow template',
+      },
+    });
+    expect(copied.frontmatter.name).toBe('workflow-template-copy');
+
+    const renamed = await stencil.rename('workflow-template-copy', 'workflow-template-final');
+    expect(renamed.frontmatter.name).toBe('workflow-template-final');
+
+    const original = await stencil.get('workflow-template');
+    const finalCopy = await stencil.get('workflow-template-final');
+    expect(original?.collection).toBe('backend');
+    expect(finalCopy?.frontmatter.description).toBe('Copied workflow template');
+
+    const names = (await stencil.list()).map((template) => template.frontmatter.name);
+    expect(names).toEqual(['workflow-template', 'workflow-template-final']);
+
+    const validation = await stencil.validate('workflow-template-final');
+    expect(validation.valid).toBe(true);
+
+    expect(await stencil.delete('workflow-template')).toBe(true);
+    expect(await stencil.delete('workflow-template-final')).toBe(true);
+    expect(await stencil.get('workflow-template')).toBeNull();
+    expect(await stencil.get('workflow-template-final')).toBeNull();
   });
 });

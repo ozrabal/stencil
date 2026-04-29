@@ -2,11 +2,14 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
+  CopyTemplateOptions,
   ListOptions,
+  RenameTemplateOptions,
   ResolutionResult,
   StencilOptions,
   Template,
   TemplateFrontmatter,
+  UpdateTemplateInput,
   ValidationResult,
 } from './types.js';
 import type { StencilConfig } from './types.js';
@@ -127,6 +130,128 @@ export class Stencil {
     return (await this.storage.getTemplate(frontmatter.name)) ?? template;
   }
 
+  async update(name: string, patch: UpdateTemplateInput): Promise<Template> {
+    await this.ensureRuntimeReady();
+
+    const existingTemplate = await this.storage.getProjectTemplate(name);
+    if (existingTemplate === null) {
+      const visibleTemplate = await this.storage.getTemplate(name);
+      if (visibleTemplate?.source === 'global') {
+        throw new Error(
+          `Template "${name}" exists in the global directory only and cannot be updated.`,
+        );
+      }
+
+      throw new Error(`Template not found: "${name}"`);
+    }
+
+    const candidate = this.applyTemplatePatch(existingTemplate, patch);
+    this.assertMutationIsValid(candidate, `update template "${name}"`);
+
+    await this.storage.renameProjectTemplate(name, candidate);
+    return await this.requireProjectTemplate(candidate.frontmatter.name);
+  }
+
+  async copy(
+    sourceName: string,
+    targetName: string,
+    options: CopyTemplateOptions = {},
+  ): Promise<Template> {
+    await this.ensureRuntimeReady();
+
+    if (sourceName === targetName) {
+      throw new Error('Copy source and target names must be different.');
+    }
+
+    const sourceTemplate = await this.storage.getTemplate(sourceName);
+    if (sourceTemplate === null) {
+      throw new Error(`Template not found: "${sourceName}"`);
+    }
+
+    const candidate = this.applyTemplatePatch(
+      {
+        ...sourceTemplate,
+        filePath: '',
+        frontmatter: {
+          ...sourceTemplate.frontmatter,
+          name: targetName,
+        },
+        source: 'project',
+      },
+      options,
+    );
+    this.assertMutationIsValid(candidate, `copy template "${sourceName}" to "${targetName}"`);
+
+    const visibleTarget = await this.storage.getTemplate(targetName);
+    if (visibleTarget !== null) {
+      if (visibleTarget.source === 'global') {
+        throw new Error(
+          `Template "${targetName}" exists in the global directory and cannot be overwritten.`,
+        );
+      }
+
+      if (options.overwrite !== true) {
+        throw new Error(`Template "${targetName}" already exists in the project directory.`);
+      }
+
+      await this.storage.deleteTemplate(targetName);
+    }
+
+    await this.storage.saveTemplate(candidate);
+    return await this.requireProjectTemplate(targetName);
+  }
+
+  async rename(
+    sourceName: string,
+    targetName: string,
+    options: RenameTemplateOptions = {},
+  ): Promise<Template> {
+    await this.ensureRuntimeReady();
+
+    if (sourceName === targetName) {
+      throw new Error('Rename source and target names must be different.');
+    }
+
+    const sourceTemplate = await this.storage.getProjectTemplate(sourceName);
+    if (sourceTemplate === null) {
+      const visibleTemplate = await this.storage.getTemplate(sourceName);
+      if (visibleTemplate?.source === 'global') {
+        throw new Error(
+          `Template "${sourceName}" exists in the global directory only and cannot be renamed.`,
+        );
+      }
+
+      throw new Error(`Template not found: "${sourceName}"`);
+    }
+
+    const visibleTarget = await this.storage.getTemplate(targetName);
+    if (visibleTarget !== null) {
+      if (visibleTarget.source === 'global') {
+        throw new Error(
+          `Template "${targetName}" exists in the global directory and cannot be overwritten.`,
+        );
+      }
+
+      if (options.overwrite !== true) {
+        throw new Error(`Template "${targetName}" already exists in the project directory.`);
+      }
+    }
+
+    const candidate: Template = {
+      ...sourceTemplate,
+      filePath: '',
+      frontmatter: {
+        ...sourceTemplate.frontmatter,
+        name: targetName,
+      },
+      source: 'project',
+    };
+    this.assertMutationIsValid(candidate, `rename template "${sourceName}" to "${targetName}"`);
+
+    await this.storage.renameProjectTemplate(sourceName, candidate, options.overwrite === true);
+    return await this.requireProjectTemplate(targetName);
+  }
+
   async list(options?: ListOptions): Promise<Template[]> {
     return this.storage.listTemplates(options);
   }
@@ -176,5 +301,52 @@ export class Stencil {
       this.globalDir,
       this.configOverrides,
     );
+  }
+
+  private applyTemplatePatch(
+    template: Template,
+    patch: {
+      body?: string;
+      collection?: null | string;
+      frontmatter?: Partial<Omit<TemplateFrontmatter, 'name'>>;
+    },
+  ): Template {
+    const nextTemplate: Template = {
+      ...template,
+      body: patch.body ?? template.body,
+      filePath: '',
+      frontmatter: {
+        ...template.frontmatter,
+        ...patch.frontmatter,
+      },
+      source: 'project',
+    };
+
+    if (patch.collection === null) {
+      delete nextTemplate.collection;
+    } else if (patch.collection !== undefined) {
+      nextTemplate.collection = patch.collection;
+    }
+
+    return nextTemplate;
+  }
+
+  private assertMutationIsValid(template: Template, action: string): void {
+    const errorMessages = validateTemplate(template)
+      .issues.filter((issue) => issue.severity === 'error')
+      .map((issue) => issue.message);
+
+    if (errorMessages.length > 0) {
+      throw new Error(`Cannot ${action}: ${errorMessages.join('; ')}`);
+    }
+  }
+
+  private async requireProjectTemplate(name: string): Promise<Template> {
+    const template = await this.storage.getProjectTemplate(name);
+    if (template === null) {
+      throw new Error(`Template not found after save: "${name}"`);
+    }
+
+    return template;
   }
 }
