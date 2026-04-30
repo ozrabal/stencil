@@ -9,6 +9,8 @@ import type {
   TemplateSource,
 } from './types.js';
 
+import { StencilError, StencilErrorCode } from './errors.js';
+
 const DELIMITER = '---';
 const COLLECTION_PATH_RE = /[/\\]collections[/\\]([^/\\]+)[/\\]/;
 const VALID_PLACEHOLDER_TYPES = new Set<PlaceholderType>([
@@ -23,23 +25,66 @@ const VALID_PLACEHOLDER_TYPES = new Set<PlaceholderType>([
  * Thrown when a template file does not exist on disk.
  * Raised by the storage layer, not by parseTemplate itself.
  */
-export class TemplateNotFoundError extends Error {
-  constructor(public readonly filePath: string) {
-    super(`Template not found: ${filePath}`);
-    this.name = 'TemplateNotFoundError';
+export class TemplateNotFoundError extends StencilError {
+  readonly filePath?: string;
+  readonly templateName?: string;
+
+  constructor(
+    identifier: string,
+    options: ErrorOptions & {
+      filePath?: string;
+      templateName?: string;
+    } = {},
+  ) {
+    const filePath = options.filePath ?? identifier;
+    const templateName = options.templateName;
+    const subject = templateName ?? filePath;
+
+    super(`Template not found: ${subject}`, StencilErrorCode.TEMPLATE_NOT_FOUND, {
+      cause: options.cause,
+      details: {
+        filePath,
+        templateName,
+      },
+    });
+
+    if (filePath !== undefined) {
+      this.filePath = filePath;
+    }
+    if (templateName !== undefined) {
+      this.templateName = templateName;
+    }
   }
 }
 
 /**
  * Thrown when a template file cannot be parsed.
  */
-export class ParseError extends Error {
+export class ParseError extends StencilError {
+  readonly filePath?: string;
+
   constructor(
     message: string,
+    code:
+      | StencilErrorCode.FRONTMATTER_INVALID_YAML
+      | StencilErrorCode.FRONTMATTER_MISSING
+      | StencilErrorCode.FRONTMATTER_SCHEMA_ERROR,
     public readonly line?: number,
+    options: ErrorOptions & {
+      filePath?: string;
+    } = {},
   ) {
-    super(message);
-    this.name = 'ParseError';
+    super(message, code, {
+      cause: options.cause,
+      details: {
+        filePath: options.filePath,
+        line,
+      },
+    });
+
+    if (options.filePath !== undefined) {
+      this.filePath = options.filePath;
+    }
   }
 }
 
@@ -54,7 +99,12 @@ export function parseTemplate(
   const lines = raw.split(/\r?\n/);
 
   if (lines[0]?.trim() !== DELIMITER) {
-    throw new ParseError('Missing frontmatter: file must start with ---', 1);
+    throw new ParseError(
+      'Missing frontmatter: file must start with ---',
+      StencilErrorCode.FRONTMATTER_MISSING,
+      1,
+      { filePath },
+    );
   }
 
   let closingIndex = -1;
@@ -66,7 +116,12 @@ export function parseTemplate(
   }
 
   if (closingIndex === -1) {
-    throw new ParseError('Missing closing --- for frontmatter block');
+    throw new ParseError(
+      'Missing closing --- for frontmatter block',
+      StencilErrorCode.FRONTMATTER_MISSING,
+      undefined,
+      { filePath },
+    );
   }
 
   const yamlBlock = lines.slice(1, closingIndex).join('\n');
@@ -78,15 +133,27 @@ export function parseTemplate(
     if (error instanceof YAMLParseError) {
       throw new ParseError(
         `Invalid YAML in frontmatter: ${error.message}`,
+        StencilErrorCode.FRONTMATTER_INVALID_YAML,
         error.linePos?.[0]?.line,
+        { cause: error, filePath },
       );
     }
 
-    throw new ParseError('Failed to parse frontmatter YAML');
+    throw new ParseError(
+      'Failed to parse frontmatter YAML',
+      StencilErrorCode.FRONTMATTER_INVALID_YAML,
+      undefined,
+      { cause: error instanceof Error ? error : undefined, filePath },
+    );
   }
 
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new ParseError('Frontmatter must be a YAML mapping (key-value object)');
+    throw new ParseError(
+      'Frontmatter must be a YAML mapping (key-value object)',
+      StencilErrorCode.FRONTMATTER_SCHEMA_ERROR,
+      undefined,
+      { filePath },
+    );
   }
 
   const frontmatter = mapFrontmatter(parsed as Record<string, unknown>);
@@ -140,7 +207,10 @@ function mapFrontmatter(raw: Record<string, unknown>): TemplateFrontmatter {
 
 function mapPlaceholder(raw: unknown, index: number): PlaceholderDefinition {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ParseError(`placeholders[${index}] must be a YAML mapping`);
+    throw new ParseError(
+      `placeholders[${index}] must be a YAML mapping`,
+      StencilErrorCode.FRONTMATTER_SCHEMA_ERROR,
+    );
   }
 
   const placeholder = raw as Record<string, unknown>;

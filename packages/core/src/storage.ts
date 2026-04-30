@@ -12,6 +12,7 @@ import type {
   TemplateSource,
 } from './types.js';
 
+import { StencilErrorCode, StorageOperationError, TemplateConflictError } from './errors.js';
 import { parseTemplate } from './parser.js';
 
 /**
@@ -94,8 +95,17 @@ export class LocalStorageProvider implements StorageProvider {
 
   async saveTemplate(template: Template): Promise<void> {
     const filePath = resolveTemplatePath(this.projectDir, template);
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, serializeTemplate(template), 'utf8');
+    try {
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, serializeTemplate(template), 'utf8');
+    } catch (error) {
+      throw new StorageOperationError(
+        `Failed to save template "${template.frontmatter.name}"`,
+        StencilErrorCode.STORAGE_WRITE_ERROR,
+        'save',
+        buildStorageErrorOptions(filePath, template.frontmatter.name, error),
+      );
+    }
   }
 
   async renameProjectTemplate(
@@ -110,29 +120,56 @@ export class LocalStorageProvider implements StorageProvider {
 
     const targetPath = resolveTemplatePath(this.projectDir, targetTemplate);
     if (sourcePath !== targetPath && !overwrite && (await fileExists(targetPath))) {
-      throw new Error(`Template already exists at target path: ${targetPath}`);
+      throw new TemplateConflictError(
+        `Template already exists at target path: ${targetPath}`,
+        StencilErrorCode.TEMPLATE_ALREADY_EXISTS,
+        'rename-project-template',
+        {
+          targetName: targetTemplate.frontmatter.name,
+          targetScope: 'project',
+          templateName: sourceName,
+        },
+      );
     }
 
-    await mkdir(path.dirname(targetPath), { recursive: true });
+    try {
+      await mkdir(path.dirname(targetPath), { recursive: true });
 
-    if (sourcePath !== targetPath) {
-      if (overwrite && (await fileExists(targetPath))) {
-        await rm(targetPath);
+      if (sourcePath !== targetPath) {
+        if (overwrite && (await fileExists(targetPath))) {
+          await rm(targetPath);
+        }
+
+        await rename(sourcePath, targetPath);
       }
 
-      await rename(sourcePath, targetPath);
+      await writeFile(targetPath, serializeTemplate(targetTemplate), 'utf8');
+      return true;
+    } catch (error) {
+      throw new StorageOperationError(
+        `Failed to rename template "${sourceName}"`,
+        StencilErrorCode.STORAGE_RENAME_ERROR,
+        'rename',
+        buildStorageErrorOptions(targetPath, sourceName, error),
+      );
     }
-
-    await writeFile(targetPath, serializeTemplate(targetTemplate), 'utf8');
-    return true;
   }
 
   async deleteTemplate(name: string): Promise<boolean> {
     const filePath = await findTemplatePath(name, this.projectDir);
     if (filePath === null) return false;
 
-    await rm(filePath);
-    return true;
+    try {
+      await rm(filePath);
+      return true;
+    } catch (error) {
+      throw new StorageOperationError(
+        `Failed to delete template "${name}"`,
+        StencilErrorCode.STORAGE_DELETE_ERROR,
+        'delete',
+        buildStorageErrorOptions(filePath, name, error),
+      );
+    }
   }
 
   async templateExists(name: string): Promise<boolean> {
@@ -181,17 +218,11 @@ async function parseTemplateFiles(
   filePaths: string[],
   source: TemplateSource,
 ): Promise<Template[]> {
-  const parsed = await Promise.all(
-    filePaths.map(async (filePath): Promise<null | Template> => {
-      try {
-        return parseTemplate(filePath, await readFile(filePath, 'utf8'), source);
-      } catch {
-        return null;
-      }
-    }),
+  return Promise.all(
+    filePaths.map(async (filePath) =>
+      parseTemplate(filePath, await readTemplateFile(filePath), source),
+    ),
   );
-
-  return parsed.filter((template): template is Template => template !== null);
 }
 
 async function findTemplatePath(name: string, baseDir: string): Promise<null | string> {
@@ -217,7 +248,7 @@ async function findAndParseTemplate(
   const filePath = await findTemplatePath(name, baseDir);
   if (filePath === null) return null;
 
-  return parseTemplate(filePath, await readFile(filePath, 'utf8'), source);
+  return parseTemplate(filePath, await readTemplateFile(filePath, name), source);
 }
 
 function resolveTemplatePath(baseDir: string, template: Template): string {
@@ -267,15 +298,80 @@ function buildPlaceholderObject(placeholder: PlaceholderDefinition): Record<stri
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     return (await stat(filePath)).isFile();
-  } catch {
-    return false;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return false;
+    }
+
+    throw new StorageOperationError(
+      `Failed to inspect template path "${filePath}"`,
+      StencilErrorCode.STORAGE_READ_ERROR,
+      'stat',
+      buildStorageErrorOptions(filePath, undefined, error),
+    );
+  }
+}
+
+async function readTemplateFile(filePath: string, templateName?: string): Promise<string> {
+  try {
+    return await readFile(filePath, 'utf8');
+  } catch (error) {
+    throw new StorageOperationError(
+      `Failed to read template file "${filePath}"`,
+      StencilErrorCode.STORAGE_READ_ERROR,
+      'read',
+      buildStorageErrorOptions(filePath, templateName, error),
+    );
   }
 }
 
 async function readDirectory(dirPath: string) {
   try {
     return await readdir(dirPath, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return [];
+    }
+
+    throw new StorageOperationError(
+      `Failed to read directory "${dirPath}"`,
+      StencilErrorCode.STORAGE_READ_ERROR,
+      'readdir',
+      buildStorageErrorOptions(dirPath, undefined, error),
+    );
   }
+}
+
+function buildStorageErrorOptions(
+  filePath: string,
+  templateName: string | undefined,
+  error: unknown,
+): ErrorOptions & {
+  filePath?: string;
+  templateName?: string;
+} {
+  const options: ErrorOptions & {
+    filePath?: string;
+    templateName?: string;
+  } = {
+    filePath,
+  };
+
+  if (error instanceof Error) {
+    options.cause = error;
+  }
+  if (templateName !== undefined) {
+    options.templateName = templateName;
+  }
+
+  return options;
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
 }

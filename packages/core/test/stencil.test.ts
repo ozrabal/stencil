@@ -4,6 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { StencilConfigError } from '../src/config.js';
+import { StencilErrorCode, TemplateConflictError, TemplateValidationError } from '../src/errors.js';
+import { ParseError, TemplateNotFoundError } from '../src/parser.js';
 import { Stencil } from '../src/stencil.js';
 import { LocalStorageProvider } from '../src/storage.js';
 import type { ContextProvider, TemplateFrontmatter } from '../src/types.js';
@@ -160,7 +162,17 @@ describe('Stencil.create()', () => {
       version: 1,
     };
 
-    await expect(stencil.create(badFrontmatter, 'body')).rejects.toThrow();
+    await expect(stencil.create(badFrontmatter, 'body')).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateValidationError);
+      expect((error as TemplateValidationError).code).toBe(
+        StencilErrorCode.TEMPLATE_VALIDATION_FAILED,
+      );
+      expect((error as TemplateValidationError).operation).toBe('create');
+      expect(
+        (error as TemplateValidationError).issues.some((issue) => issue.severity === 'error'),
+      ).toBe(true);
+      return true;
+    });
   });
 
   it('throws if name is not kebab-case', async () => {
@@ -442,7 +454,15 @@ describe('Stencil.update()', () => {
           description: '',
         },
       }),
-    ).rejects.toThrow('Cannot update template');
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateValidationError);
+      expect((error as TemplateValidationError).operation).toBe('update');
+      expect((error as TemplateValidationError).message).toContain('Cannot update template');
+      expect(
+        (error as TemplateValidationError).issues.some((issue) => issue.severity === 'error'),
+      ).toBe(true);
+      return true;
+    });
   });
 
   it('rejects updates for templates that exist only globally', async () => {
@@ -461,7 +481,15 @@ describe('Stencil.update()', () => {
 
       await expect(
         stencilWithGlobal.update('global-update-only', { body: 'Updated body' }),
-      ).rejects.toThrow('global directory only');
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(TemplateConflictError);
+        expect((error as TemplateConflictError).code).toBe(
+          StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+        );
+        expect((error as TemplateConflictError).operation).toBe('update');
+        expect((error as TemplateConflictError).templateName).toBe('global-update-only');
+        return true;
+      });
     } finally {
       await rm(globalProjectDir, { force: true, recursive: true });
     }
@@ -529,15 +557,30 @@ describe('Stencil.copy()', () => {
       stencil.copy('invalid-copy-source', 'invalid-copy-target', {
         frontmatter: { description: '' },
       }),
-    ).rejects.toThrow('Cannot copy template');
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateValidationError);
+      expect((error as TemplateValidationError).operation).toBe('copy');
+      expect(
+        (error as TemplateValidationError).issues.some((issue) => issue.severity === 'error'),
+      ).toBe(true);
+      return true;
+    });
   });
 
   it('rejects target collisions by default', async () => {
     await stencil.create(makeFrontmatter('copy-collision-source'), 'Source');
     await stencil.create(makeFrontmatter('copy-collision-target'), 'Target');
 
-    await expect(stencil.copy('copy-collision-source', 'copy-collision-target')).rejects.toThrow(
-      'already exists in the project directory',
+    await expect(stencil.copy('copy-collision-source', 'copy-collision-target')).rejects.toSatisfy(
+      (error: unknown) => {
+        expect(error).toBeInstanceOf(TemplateConflictError);
+        expect((error as TemplateConflictError).code).toBe(
+          StencilErrorCode.TEMPLATE_ALREADY_EXISTS,
+        );
+        expect((error as TemplateConflictError).operation).toBe('copy');
+        expect((error as TemplateConflictError).targetName).toBe('copy-collision-target');
+        return true;
+      },
     );
   });
 
@@ -573,7 +616,15 @@ describe('Stencil.copy()', () => {
         stencilWithGlobal.copy('copy-global-source', 'copy-global-target', {
           overwrite: true,
         }),
-      ).rejects.toThrow('global directory');
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(TemplateConflictError);
+        expect((error as TemplateConflictError).code).toBe(
+          StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+        );
+        expect((error as TemplateConflictError).operation).toBe('copy');
+        expect((error as TemplateConflictError).targetName).toBe('copy-global-target');
+        return true;
+      });
     } finally {
       await rm(globalProjectDir, { force: true, recursive: true });
     }
@@ -626,7 +677,15 @@ describe('Stencil.rename()', () => {
 
       await expect(
         stencilWithGlobal.rename('global-rename-only', 'global-rename-target'),
-      ).rejects.toThrow('global directory only');
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(TemplateConflictError);
+        expect((error as TemplateConflictError).code).toBe(
+          StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+        );
+        expect((error as TemplateConflictError).operation).toBe('rename');
+        expect((error as TemplateConflictError).templateName).toBe('global-rename-only');
+        return true;
+      });
     } finally {
       await rm(globalProjectDir, { force: true, recursive: true });
     }
@@ -638,7 +697,13 @@ describe('Stencil.rename()', () => {
 
     await expect(
       stencil.rename('rename-collision-source', 'rename-collision-target'),
-    ).rejects.toThrow('already exists in the project directory');
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateConflictError);
+      expect((error as TemplateConflictError).code).toBe(StencilErrorCode.TEMPLATE_ALREADY_EXISTS);
+      expect((error as TemplateConflictError).operation).toBe('rename');
+      expect((error as TemplateConflictError).targetName).toBe('rename-collision-target');
+      return true;
+    });
   });
 
   it('allows overwrite only for project targets', async () => {
@@ -898,7 +963,12 @@ describe('Stencil.resolve()', () => {
   });
 
   it('throws when template does not exist', async () => {
-    await expect(stencil.resolve('nonexistent', {})).rejects.toThrow('nonexistent');
+    await expect(stencil.resolve('nonexistent', {})).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateNotFoundError);
+      expect((error as TemplateNotFoundError).code).toBe(StencilErrorCode.TEMPLATE_NOT_FOUND);
+      expect((error as TemplateNotFoundError).templateName).toBe('nonexistent');
+      return true;
+    });
   });
 
   it('throws when template has validation errors', async () => {
@@ -909,7 +979,12 @@ describe('Stencil.resolve()', () => {
       source: 'project',
     });
 
-    await expect(stencil.resolve('invalid-tmpl', {})).rejects.toThrow();
+    await expect(stencil.resolve('invalid-tmpl', {})).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateValidationError);
+      expect((error as TemplateValidationError).operation).toBe('resolve');
+      expect((error as TemplateValidationError).templateName).toBe('invalid-tmpl');
+      return true;
+    });
   });
 
   it('does not let warnings block resolution', async () => {
@@ -975,6 +1050,19 @@ describe('Stencil.search()', () => {
   it('returns empty array when no templates match', async () => {
     await stencil.create(makeFrontmatter('some-template'), 'body');
     expect(await stencil.search('zzznomatch')).toEqual([]);
+  });
+
+  it('surfaces malformed discovered templates instead of silently skipping them', async () => {
+    await stencil.create(makeFrontmatter('healthy-template'), 'body');
+    const badTemplatePath = path.join(projectDir, '.stencil', 'templates', 'broken.md');
+    await writeFile(badTemplatePath, '---\nname: [broken\n---\nbody', 'utf8');
+
+    await expect(stencil.search('template')).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(ParseError);
+      expect((error as ParseError).code).toBe(StencilErrorCode.FRONTMATTER_INVALID_YAML);
+      expect((error as ParseError).filePath).toBe(badTemplatePath);
+      return true;
+    });
   });
 });
 

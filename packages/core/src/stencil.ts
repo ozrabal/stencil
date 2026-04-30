@@ -23,6 +23,13 @@ import {
   ProjectContextProvider,
   SystemContextProvider,
 } from './context.js';
+import {
+  StencilErrorCode,
+  StorageOperationError,
+  TemplateConflictError,
+  TemplateValidationError,
+} from './errors.js';
+import { TemplateNotFoundError } from './parser.js';
 import { resolveGlobalStencilDir } from './paths.js';
 import { resolveTemplate } from './resolver.js';
 import { LocalStorageProvider } from './storage.js';
@@ -80,19 +87,14 @@ export class Stencil {
 
     const template = await this.storage.getTemplate(templateName);
     if (template === null) {
-      throw new Error(`Template not found: "${templateName}"`);
+      throw new TemplateNotFoundError(templateName, { templateName });
     }
 
-    const validation = validateTemplate(template);
-    const errorMessages = validation.issues
-      .filter((issue) => issue.severity === 'error')
-      .map((issue) => issue.message);
-
-    if (errorMessages.length > 0) {
-      throw new Error(
-        `Template "${templateName}" has validation errors: ${errorMessages.join('; ')}`,
-      );
-    }
+    this.assertMutationIsValid(
+      template,
+      'resolve',
+      `Template "${templateName}" has validation errors`,
+    );
 
     const context = await this.context.resolveAll();
     return resolveTemplate(template, { context, explicit: explicitValues });
@@ -116,14 +118,7 @@ export class Stencil {
       template.collection = resolvedCollection;
     }
 
-    const validation = validateTemplate(template);
-    const errorMessages = validation.issues
-      .filter((issue) => issue.severity === 'error')
-      .map((issue) => issue.message);
-
-    if (errorMessages.length > 0) {
-      throw new Error(`Cannot create template: ${errorMessages.join('; ')}`);
-    }
+    this.assertMutationIsValid(template, 'create', 'Cannot create template');
 
     await this.storage.saveTemplate(template);
 
@@ -137,16 +132,18 @@ export class Stencil {
     if (existingTemplate === null) {
       const visibleTemplate = await this.storage.getTemplate(name);
       if (visibleTemplate?.source === 'global') {
-        throw new Error(
+        throw this.createMutationNotAllowedError(
           `Template "${name}" exists in the global directory only and cannot be updated.`,
+          'update',
+          { sourceScope: 'global', templateName: name },
         );
       }
 
-      throw new Error(`Template not found: "${name}"`);
+      throw new TemplateNotFoundError(name, { templateName: name });
     }
 
     const candidate = this.applyTemplatePatch(existingTemplate, patch);
-    this.assertMutationIsValid(candidate, `update template "${name}"`);
+    this.assertMutationIsValid(candidate, 'update', `Cannot update template "${name}"`);
 
     await this.storage.renameProjectTemplate(name, candidate);
     return await this.requireProjectTemplate(candidate.frontmatter.name);
@@ -160,12 +157,16 @@ export class Stencil {
     await this.ensureRuntimeReady();
 
     if (sourceName === targetName) {
-      throw new Error('Copy source and target names must be different.');
+      throw this.createMutationNotAllowedError(
+        'Copy source and target names must be different.',
+        'copy',
+        { targetName, templateName: sourceName },
+      );
     }
 
     const sourceTemplate = await this.storage.getTemplate(sourceName);
     if (sourceTemplate === null) {
-      throw new Error(`Template not found: "${sourceName}"`);
+      throw new TemplateNotFoundError(sourceName, { templateName: sourceName });
     }
 
     const candidate = this.applyTemplatePatch(
@@ -180,18 +181,28 @@ export class Stencil {
       },
       options,
     );
-    this.assertMutationIsValid(candidate, `copy template "${sourceName}" to "${targetName}"`);
+    this.assertMutationIsValid(
+      candidate,
+      'copy',
+      `Cannot copy template "${sourceName}" to "${targetName}"`,
+    );
 
     const visibleTarget = await this.storage.getTemplate(targetName);
     if (visibleTarget !== null) {
       if (visibleTarget.source === 'global') {
-        throw new Error(
+        throw this.createMutationNotAllowedError(
           `Template "${targetName}" exists in the global directory and cannot be overwritten.`,
+          'copy',
+          { targetName, targetScope: 'global', templateName: sourceName },
         );
       }
 
       if (options.overwrite !== true) {
-        throw new Error(`Template "${targetName}" already exists in the project directory.`);
+        throw this.createAlreadyExistsError(
+          `Template "${targetName}" already exists in the project directory.`,
+          'copy',
+          { targetName, targetScope: 'project', templateName: sourceName },
+        );
       }
 
       await this.storage.deleteTemplate(targetName);
@@ -209,31 +220,43 @@ export class Stencil {
     await this.ensureRuntimeReady();
 
     if (sourceName === targetName) {
-      throw new Error('Rename source and target names must be different.');
+      throw this.createMutationNotAllowedError(
+        'Rename source and target names must be different.',
+        'rename',
+        { targetName, templateName: sourceName },
+      );
     }
 
     const sourceTemplate = await this.storage.getProjectTemplate(sourceName);
     if (sourceTemplate === null) {
       const visibleTemplate = await this.storage.getTemplate(sourceName);
       if (visibleTemplate?.source === 'global') {
-        throw new Error(
+        throw this.createMutationNotAllowedError(
           `Template "${sourceName}" exists in the global directory only and cannot be renamed.`,
+          'rename',
+          { sourceScope: 'global', targetName, templateName: sourceName },
         );
       }
 
-      throw new Error(`Template not found: "${sourceName}"`);
+      throw new TemplateNotFoundError(sourceName, { templateName: sourceName });
     }
 
     const visibleTarget = await this.storage.getTemplate(targetName);
     if (visibleTarget !== null) {
       if (visibleTarget.source === 'global') {
-        throw new Error(
+        throw this.createMutationNotAllowedError(
           `Template "${targetName}" exists in the global directory and cannot be overwritten.`,
+          'rename',
+          { targetName, targetScope: 'global', templateName: sourceName },
         );
       }
 
       if (options.overwrite !== true) {
-        throw new Error(`Template "${targetName}" already exists in the project directory.`);
+        throw this.createAlreadyExistsError(
+          `Template "${targetName}" already exists in the project directory.`,
+          'rename',
+          { targetName, targetScope: 'project', templateName: sourceName },
+        );
       }
     }
 
@@ -246,7 +269,11 @@ export class Stencil {
       },
       source: 'project',
     };
-    this.assertMutationIsValid(candidate, `rename template "${sourceName}" to "${targetName}"`);
+    this.assertMutationIsValid(
+      candidate,
+      'rename',
+      `Cannot rename template "${sourceName}" to "${targetName}"`,
+    );
 
     await this.storage.renameProjectTemplate(sourceName, candidate, options.overwrite === true);
     return await this.requireProjectTemplate(targetName);
@@ -331,22 +358,106 @@ export class Stencil {
     return nextTemplate;
   }
 
-  private assertMutationIsValid(template: Template, action: string): void {
-    const errorMessages = validateTemplate(template)
-      .issues.filter((issue) => issue.severity === 'error')
-      .map((issue) => issue.message);
+  private assertMutationIsValid(
+    template: Template,
+    operation: string,
+    messagePrefix: string,
+  ): void {
+    const validation = validateTemplate(template);
+    const issues = validation.issues.filter((issue) => issue.severity === 'error');
 
-    if (errorMessages.length > 0) {
-      throw new Error(`Cannot ${action}: ${errorMessages.join('; ')}`);
+    if (issues.length > 0) {
+      throw new TemplateValidationError(
+        `${messagePrefix}: ${issues.map((issue) => issue.message).join('; ')}`,
+        operation,
+        validation.issues,
+        { templateName: template.frontmatter.name },
+      );
     }
   }
 
   private async requireProjectTemplate(name: string): Promise<Template> {
     const template = await this.storage.getProjectTemplate(name);
     if (template === null) {
-      throw new Error(`Template not found after save: "${name}"`);
+      throw new StorageOperationError(
+        `Template not found after save: "${name}"`,
+        StencilErrorCode.STORAGE_READ_ERROR,
+        'read-after-save',
+        { templateName: name },
+      );
     }
 
     return template;
+  }
+
+  private createAlreadyExistsError(
+    message: string,
+    operation: string,
+    options: {
+      targetName?: string;
+      targetScope?: string;
+      templateName?: string;
+    },
+  ): TemplateConflictError {
+    const errorOptions: {
+      targetName?: string;
+      targetScope?: string;
+      templateName?: string;
+    } = {};
+
+    if (options.targetName !== undefined) {
+      errorOptions.targetName = options.targetName;
+    }
+    if (options.targetScope !== undefined) {
+      errorOptions.targetScope = options.targetScope;
+    }
+    if (options.templateName !== undefined) {
+      errorOptions.templateName = options.templateName;
+    }
+
+    return new TemplateConflictError(
+      message,
+      StencilErrorCode.TEMPLATE_ALREADY_EXISTS,
+      operation,
+      errorOptions,
+    );
+  }
+
+  private createMutationNotAllowedError(
+    message: string,
+    operation: string,
+    options: {
+      sourceScope?: string;
+      targetName?: string;
+      targetScope?: string;
+      templateName?: string;
+    },
+  ): TemplateConflictError {
+    const errorOptions: {
+      sourceScope?: string;
+      targetName?: string;
+      targetScope?: string;
+      templateName?: string;
+    } = {};
+
+    if (options.sourceScope !== undefined) {
+      errorOptions.sourceScope = options.sourceScope;
+    }
+    if (options.targetName !== undefined) {
+      errorOptions.targetName = options.targetName;
+    }
+    if (options.targetScope !== undefined) {
+      errorOptions.targetScope = options.targetScope;
+    }
+    if (options.templateName !== undefined) {
+      errorOptions.templateName = options.templateName;
+    }
+
+    return new TemplateConflictError(
+      message,
+      StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+      operation,
+      errorOptions,
+    );
   }
 }

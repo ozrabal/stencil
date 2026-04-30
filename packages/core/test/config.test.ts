@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { StencilError, StencilErrorCode } from '../src/errors.js';
 import { loadStencilConfig, mergeStencilConfig, StencilConfigError } from '../src/config.js';
 
 const tempDirs: string[] = [];
@@ -195,6 +196,7 @@ describe('loadStencilConfig', () => {
     await writeConfig(stencilDir, 'custom_context: [broken');
 
     await expect(loadStencilConfig(stencilDir)).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
       filePath: path.join(stencilDir, 'config.yaml'),
       name: 'StencilConfigError',
     } as Partial<StencilConfigError>);
@@ -209,9 +211,25 @@ describe('loadStencilConfig', () => {
     );
 
     await expect(loadStencilConfig(stencilDir)).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
       field: 'custom_context.retries',
       filePath: path.join(stencilDir, 'config.yaml'),
       name: 'StencilConfigError',
     } as Partial<StencilConfigError>);
+  });
+
+  it('config errors are StencilError instances with structured metadata', async () => {
+    const projectDir = await makeTempDir('stencil-config-project');
+    const stencilDir = path.join(projectDir, '.stencil');
+    await writeConfig(stencilDir, 'version: wrong');
+
+    await expect(loadStencilConfig(stencilDir)).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(StencilError);
+      expect(error).toBeInstanceOf(StencilConfigError);
+      expect((error as StencilConfigError).code).toBe(StencilErrorCode.CONFIG_INVALID);
+      expect((error as StencilConfigError).filePath).toBe(path.join(stencilDir, 'config.yaml'));
+      expect((error as StencilConfigError).field).toBe('version');
+      return true;
+    });
   });
 });

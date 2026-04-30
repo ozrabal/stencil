@@ -4,6 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CollectionManager } from '../src/collections.js';
+import { StencilErrorCode, TemplateConflictError } from '../src/errors.js';
+import { TemplateNotFoundError } from '../src/parser.js';
 import { LocalStorageProvider } from '../src/storage.js';
 import type { Template } from '../src/types.js';
 
@@ -102,8 +104,13 @@ describe('CollectionManager moveToCollection', () => {
   it('throws when the template does not exist', async () => {
     const manager = new CollectionManager(new LocalStorageProvider(tmpDir));
 
-    await expect(manager.moveToCollection('missing', 'backend')).rejects.toThrow(
-      'Template "missing" not found.',
+    await expect(manager.moveToCollection('missing', 'backend')).rejects.toSatisfy(
+      (error: unknown) => {
+        expect(error).toBeInstanceOf(TemplateNotFoundError);
+        expect((error as TemplateNotFoundError).code).toBe(StencilErrorCode.TEMPLATE_NOT_FOUND);
+        expect((error as TemplateNotFoundError).templateName).toBe('missing');
+        return true;
+      },
     );
   });
 
@@ -116,8 +123,16 @@ describe('CollectionManager moveToCollection', () => {
 
       await new LocalStorageProvider(globalDir).saveTemplate(makeTemplate({ name: 'shared' }));
 
-      await expect(manager.moveToCollection('shared', 'backend')).rejects.toThrow(
-        'exists in the global directory only',
+      await expect(manager.moveToCollection('shared', 'backend')).rejects.toSatisfy(
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(TemplateConflictError);
+          expect((error as TemplateConflictError).code).toBe(
+            StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+          );
+          expect((error as TemplateConflictError).operation).toBe('move-to-collection');
+          expect((error as TemplateConflictError).templateName).toBe('shared');
+          return true;
+        },
       );
       const shared = await storage.getTemplate('shared');
       expect(shared?.source).toBe('global');

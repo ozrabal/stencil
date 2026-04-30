@@ -4,6 +4,8 @@ import { parse as parseYaml, YAMLParseError } from 'yaml';
 
 import type { StencilConfig } from './types.js';
 
+import { StencilError, StencilErrorCode } from './errors.js';
+
 const DEFAULT_STENCIL_CONFIG: StencilConfig = {
   placeholderEnd: '}}',
   placeholderStart: '{{',
@@ -12,14 +14,20 @@ const DEFAULT_STENCIL_CONFIG: StencilConfig = {
 
 type RawConfig = Record<string, unknown>;
 
-export class StencilConfigError extends Error {
+export class StencilConfigError extends StencilError {
   constructor(
     message: string,
     public readonly filePath: string,
     public readonly field?: string,
+    options: ErrorOptions = {},
   ) {
-    super(message);
-    this.name = 'StencilConfigError';
+    super(message, StencilErrorCode.CONFIG_INVALID, {
+      cause: options.cause,
+      details: {
+        field,
+        filePath,
+      },
+    });
   }
 }
 
@@ -96,10 +104,14 @@ function parseConfigYaml(filePath: string, rawFile: string): RawConfig {
       throw new StencilConfigError(
         `Invalid YAML in config file "${filePath}": ${error.message}`,
         filePath,
+        undefined,
+        { cause: error },
       );
     }
 
-    throw new StencilConfigError(`Failed to parse config file "${filePath}"`, filePath);
+    throw new StencilConfigError(`Failed to parse config file "${filePath}"`, filePath, undefined, {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 
   if (parsed === null) {

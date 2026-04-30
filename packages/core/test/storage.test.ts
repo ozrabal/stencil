@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { StencilErrorCode, StorageOperationError, TemplateConflictError } from '../src/errors.js';
+import { ParseError } from '../src/parser.js';
 import { LocalStorageProvider } from '../src/storage.js';
 import type { Template } from '../src/types.js';
 
@@ -227,16 +229,19 @@ describe('LocalStorageProvider listTemplates edge cases', () => {
     expect(await storage.listTemplates()).toEqual([]);
   });
 
-  it('skips malformed markdown files without throwing', async () => {
+  it('surfaces malformed markdown files instead of silently skipping them', async () => {
     const storage = new LocalStorageProvider(tmpDir);
     const templatesDir = path.join(tmpDir, 'templates');
     await mkdir(templatesDir, { recursive: true });
     await writeFile(path.join(templatesDir, 'broken.md'), 'no frontmatter here', 'utf8');
     await storage.saveTemplate(makeTemplate({ name: 'valid-template' }));
 
-    const list = await storage.listTemplates();
-    expect(list).toHaveLength(1);
-    expect(list[0]?.frontmatter.name).toBe('valid-template');
+    await expect(storage.listTemplates()).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(ParseError);
+      expect((error as ParseError).code).toBe(StencilErrorCode.FRONTMATTER_MISSING);
+      expect((error as ParseError).filePath).toBe(path.join(templatesDir, 'broken.md'));
+      return true;
+    });
   });
 
   it('ignores non-markdown files in template directories', async () => {
@@ -347,6 +352,42 @@ describe('LocalStorageProvider listTemplates filters', () => {
     const result = await storage.listTemplates({ searchQuery: 'security' });
     expect(result).toHaveLength(1);
     expect(result[0]?.frontmatter.name).toBe('tagged-template');
+  });
+});
+
+describe('LocalStorageProvider renameProjectTemplate', () => {
+  it('throws a typed conflict error when the target path already exists', async () => {
+    const storage = new LocalStorageProvider(tmpDir);
+    await storage.saveTemplate(makeTemplate({ name: 'rename-source' }));
+    await storage.saveTemplate(makeTemplate({ name: 'rename-target' }));
+
+    await expect(
+      storage.renameProjectTemplate('rename-source', makeTemplate({ name: 'rename-target' })),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateConflictError);
+      expect((error as TemplateConflictError).code).toBe(StencilErrorCode.TEMPLATE_ALREADY_EXISTS);
+      expect((error as TemplateConflictError).operation).toBe('rename-project-template');
+      expect((error as TemplateConflictError).targetName).toBe('rename-target');
+      return true;
+    });
+  });
+});
+
+describe('LocalStorageProvider storage failures', () => {
+  it('wraps write failures in StorageOperationError', async () => {
+    const blockedBase = path.join(tmpDir, 'blocked');
+    await writeFile(blockedBase, 'not a directory', 'utf8');
+    const storage = new LocalStorageProvider(blockedBase);
+
+    await expect(storage.saveTemplate(makeTemplate({ name: 'cannot-save' }))).rejects.toSatisfy(
+      (error: unknown) => {
+        expect(error).toBeInstanceOf(StorageOperationError);
+        expect((error as StorageOperationError).code).toBe(StencilErrorCode.STORAGE_WRITE_ERROR);
+        expect((error as StorageOperationError).operation).toBe('save');
+        expect((error as StorageOperationError).templateName).toBe('cannot-save');
+        return true;
+      },
+    );
   });
 });
 

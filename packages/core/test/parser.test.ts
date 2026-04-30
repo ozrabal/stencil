@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { StencilError, StencilErrorCode } from '../src/errors.js';
 import { ParseError, parseTemplate, TemplateNotFoundError } from '../src/parser.js';
 
 function makeRaw(frontmatter: string, body = ''): string {
@@ -179,12 +180,14 @@ describe('parseTemplate', () => {
     });
 
     it('stores line 1 when the opening delimiter is missing', () => {
-      expect.assertions(2);
+      expect.assertions(4);
 
       try {
         parseTemplate('/fake/t.md', 'no delimiter');
       } catch (error) {
+        expect(error).toBeInstanceOf(StencilError);
         expect(error).toBeInstanceOf(ParseError);
+        expect((error as ParseError).code).toBe(StencilErrorCode.FRONTMATTER_MISSING);
         expect((error as ParseError).line).toBe(1);
       }
     });
@@ -218,34 +221,44 @@ describe('parseTemplate', () => {
     });
 
     it('exposes the YAML line number when available', () => {
-      expect.assertions(2);
+      expect.assertions(4);
 
       try {
         parseTemplate('/fake/t.md', '---\nname: ok\n  bad: indentation: here\n---\nbody');
       } catch (error) {
+        expect(error).toBeInstanceOf(StencilError);
         expect(error).toBeInstanceOf(ParseError);
+        expect((error as ParseError).code).toBe(StencilErrorCode.FRONTMATTER_INVALID_YAML);
         expect((error as ParseError).line).toBeDefined();
       }
     });
   });
 
   describe('error classes', () => {
-    it('TemplateNotFoundError is an Error with file path context', () => {
+    it('TemplateNotFoundError is a StencilError with file path context', () => {
       const error = new TemplateNotFoundError('/some/path.md');
 
       expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(StencilError);
+      expect(error.code).toBe(StencilErrorCode.TEMPLATE_NOT_FOUND);
       expect(error.filePath).toBe('/some/path.md');
       expect(error.name).toBe('TemplateNotFoundError');
       expect(error.message).toContain('/some/path.md');
     });
 
-    it('ParseError is an Error with an optional line number', () => {
-      const withLine = new ParseError('bad yaml', 5);
-      const withoutLine = new ParseError('bad yaml');
+    it('ParseError is a StencilError with an optional line number', () => {
+      const withLine = new ParseError('bad yaml', StencilErrorCode.FRONTMATTER_INVALID_YAML, 5, {
+        filePath: '/some/path.md',
+      });
+      const withoutLine = new ParseError('bad yaml', StencilErrorCode.FRONTMATTER_SCHEMA_ERROR);
 
       expect(withLine).toBeInstanceOf(Error);
+      expect(withLine).toBeInstanceOf(StencilError);
       expect(withLine.name).toBe('ParseError');
+      expect(withLine.code).toBe(StencilErrorCode.FRONTMATTER_INVALID_YAML);
+      expect(withLine.filePath).toBe('/some/path.md');
       expect(withLine.line).toBe(5);
+      expect(withoutLine.code).toBe(StencilErrorCode.FRONTMATTER_SCHEMA_ERROR);
       expect(withoutLine.line).toBeUndefined();
     });
   });

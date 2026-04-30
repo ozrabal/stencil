@@ -6,6 +6,9 @@ import path from 'node:path';
 import type { LocalStorageProvider } from './storage.js';
 import type { Template } from './types.js';
 
+import { StencilErrorCode, TemplateConflictError } from './errors.js';
+import { TemplateNotFoundError } from './parser.js';
+
 /**
  * Manages template collections (subdirectory-based grouping).
  * Thin layer over LocalStorageProvider for collection CRUD.
@@ -58,15 +61,20 @@ export class CollectionManager {
   async moveToCollection(templateName: string, collectionName: string): Promise<void> {
     const template = await this.storage.getTemplate(templateName);
     if (template === null) {
-      throw new Error(
-        `Template "${templateName}" not found. Cannot move a template that does not exist.`,
-      );
+      throw new TemplateNotFoundError(templateName, { templateName });
     }
 
     const deleted = await this.storage.deleteTemplate(templateName);
     if (!deleted) {
-      throw new Error(
+      throw new TemplateConflictError(
         `Template "${templateName}" exists in the global directory only and cannot be moved.`,
+        StencilErrorCode.TEMPLATE_MUTATION_NOT_ALLOWED,
+        'move-to-collection',
+        {
+          sourceScope: 'global',
+          targetName: collectionName,
+          templateName,
+        },
       );
     }
 
