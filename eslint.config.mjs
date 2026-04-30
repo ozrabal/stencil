@@ -19,7 +19,6 @@ export default tseslint.config(
           allowDefaultProject: [
             'vitest.workspace.ts',
             'packages/*/vitest.config.ts',
-            'packages/*/test/*.ts',
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -45,6 +44,12 @@ export default tseslint.config(
   },
   {
     files: ['**/*.test.ts', '**/*.spec.ts', 'test/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: ['packages/*/tsconfig.test.json'],
+        projectService: false,
+      },
+    },
     rules: {
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
