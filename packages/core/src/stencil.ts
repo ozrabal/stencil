@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { PlaceholderDelimiters } from './placeholders.js';
 import type {
   CopyTemplateOptions,
   ListOptions,
@@ -97,7 +98,13 @@ export class Stencil {
     );
 
     const context = await this.context.resolveAll();
-    return resolveTemplate(template, { context, explicit: explicitValues });
+    return resolveTemplate(
+      template,
+      { context, explicit: explicitValues },
+      {
+        delimiters: this.getRuntimeDelimiters(),
+      },
+    );
   }
 
   async create(
@@ -292,6 +299,8 @@ export class Stencil {
   }
 
   async validate(templateName: string): Promise<ValidationResult> {
+    await this.ensureRuntimeReady();
+
     const template = await this.storage.getTemplate(templateName);
     if (template === null) {
       return {
@@ -300,7 +309,7 @@ export class Stencil {
       };
     }
 
-    return validateTemplate(template);
+    return validateTemplate(template, { delimiters: this.getRuntimeDelimiters() });
   }
 
   async search(query: string): Promise<Template[]> {
@@ -363,7 +372,9 @@ export class Stencil {
     operation: string,
     messagePrefix: string,
   ): void {
-    const validation = validateTemplate(template);
+    const validation = validateTemplate(template, {
+      delimiters: this.getRuntimeDelimiters(),
+    });
     const issues = validation.issues.filter((issue) => issue.severity === 'error');
 
     if (issues.length > 0) {
@@ -374,6 +385,13 @@ export class Stencil {
         { templateName: template.frontmatter.name },
       );
     }
+  }
+
+  private getRuntimeDelimiters(): PlaceholderDelimiters {
+    return {
+      end: this.runtimeConfig?.placeholderEnd ?? '}}',
+      start: this.runtimeConfig?.placeholderStart ?? '{{',
+    };
   }
 
   private async requireProjectTemplate(name: string): Promise<Template> {

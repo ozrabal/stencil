@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTemplate } from '../src/resolver.js';
 import type { PlaceholderDefinition, ResolutionInput, Template } from '../src/types.js';
+import type { PlaceholderDelimiters } from '../src/placeholders.js';
+
+const customDelimiters: PlaceholderDelimiters = {
+  end: ']]',
+  start: '[[',
+};
 
 function makeTemplate(body: string, placeholders: PlaceholderDefinition[] = []): Template {
   return {
@@ -214,5 +220,84 @@ describe('resolveTemplate', () => {
 
     expect(result.resolvedBody).toBe('Hello Ada');
     expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
+  });
+
+  it('resolves declared placeholders with custom delimiters', () => {
+    const result = resolveTemplate(
+      makeTemplate('Hello [[name]]', [makePlaceholder('name')]),
+      makeInput({ explicit: { name: 'Ada' } }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Hello Ada');
+    expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
+  });
+
+  it('resolves defaults with custom delimiters', () => {
+    const result = resolveTemplate(
+      makeTemplate('Mode: [[mode]]', [makePlaceholder('mode', { default: 'draft' })]),
+      makeInput(),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Mode: draft');
+    expect(result.placeholders).toEqual([{ name: 'mode', source: 'default', value: 'draft' }]);
+  });
+
+  it('resolves $ctx tokens with custom delimiters', () => {
+    const result = resolveTemplate(
+      makeTemplate('Team: [[ $ctx.team_name ]]'),
+      makeInput({ context: { team_name: 'Platform' } }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Team: Platform');
+    expect(result.placeholders).toEqual([]);
+    expect(result.unresolvedCount).toBe(0);
+  });
+
+  it('preserves unresolved declared placeholders with custom delimiters', () => {
+    const result = resolveTemplate(
+      makeTemplate('Owner: [[owner]]', [makePlaceholder('owner')]),
+      makeInput(),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Owner: [[owner]]');
+    expect(result.placeholders).toEqual([{ name: 'owner', source: 'unresolved', value: '' }]);
+    expect(result.unresolvedCount).toBe(1);
+  });
+
+  it('leaves unknown custom-delimited tokens unchanged', () => {
+    const result = resolveTemplate(makeTemplate('Hello [[unknown]]'), makeInput(), {
+      delimiters: customDelimiters,
+    });
+
+    expect(result.resolvedBody).toBe('Hello [[unknown]]');
+    expect(result.placeholders).toEqual([]);
+    expect(result.unresolvedCount).toBe(0);
+  });
+
+  it('trims whitespace inside custom-delimited tokens before matching', () => {
+    const result = resolveTemplate(
+      makeTemplate('Hello [[ name ]]', [makePlaceholder('name')]),
+      makeInput({ explicit: { name: 'Ada' } }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Hello Ada');
+    expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
+  });
+
+  it('ignores default-delimited tokens when custom delimiters are active', () => {
+    const result = resolveTemplate(
+      makeTemplate('Hello {{name}}', [makePlaceholder('name')]),
+      makeInput({ explicit: { name: 'Ada' } }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.resolvedBody).toBe('Hello {{name}}');
+    expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
+    expect(result.unresolvedCount).toBe(0);
   });
 });

@@ -76,6 +76,7 @@ export function mergeStencilConfig(
     { ...DEFAULT_STENCIL_CONFIG },
   );
 
+  validateResolvedConfig(merged);
   return merged;
 }
 
@@ -156,6 +157,9 @@ function normalizeRawConfig(filePath: string, raw: RawConfig): Partial<StencilCo
     if (typeof raw.placeholder_start !== 'string') {
       throw invalidConfigField(filePath, 'placeholder_start', 'must be a string');
     }
+    if (raw.placeholder_start.length === 0) {
+      throw invalidConfigField(filePath, 'placeholder_start', 'must not be empty');
+    }
     normalized.placeholderStart = raw.placeholder_start;
   }
 
@@ -163,7 +167,22 @@ function normalizeRawConfig(filePath: string, raw: RawConfig): Partial<StencilCo
     if (typeof raw.placeholder_end !== 'string') {
       throw invalidConfigField(filePath, 'placeholder_end', 'must be a string');
     }
+    if (raw.placeholder_end.length === 0) {
+      throw invalidConfigField(filePath, 'placeholder_end', 'must not be empty');
+    }
     normalized.placeholderEnd = raw.placeholder_end;
+  }
+
+  if (
+    normalized.placeholderStart !== undefined &&
+    normalized.placeholderEnd !== undefined &&
+    normalized.placeholderStart === normalized.placeholderEnd
+  ) {
+    throw invalidConfigField(
+      filePath,
+      'placeholder_start',
+      'must not be identical to placeholder_end',
+    );
   }
 
   return normalized;
@@ -201,6 +220,24 @@ function invalidConfigField(filePath: string, field: string, message: string): S
     filePath,
     field,
   );
+}
+
+function validateResolvedConfig(config: StencilConfig): void {
+  if (config.placeholderStart.length === 0) {
+    throw invalidConfigField('<runtime>', 'placeholder_start', 'must not be empty');
+  }
+
+  if (config.placeholderEnd.length === 0) {
+    throw invalidConfigField('<runtime>', 'placeholder_end', 'must not be empty');
+  }
+
+  if (config.placeholderStart === config.placeholderEnd) {
+    throw invalidConfigField(
+      '<runtime>',
+      'placeholder_start',
+      'must not be identical to placeholder_end',
+    );
+  }
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

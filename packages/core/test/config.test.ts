@@ -232,4 +232,60 @@ describe('loadStencilConfig', () => {
       return true;
     });
   });
+
+  it('throws StencilConfigError when placeholder_start is empty', async () => {
+    const projectDir = await makeTempDir('stencil-config-project');
+    const stencilDir = path.join(projectDir, '.stencil');
+    await writeConfig(stencilDir, "placeholder_start: ''");
+
+    await expect(loadStencilConfig(stencilDir)).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
+      field: 'placeholder_start',
+      filePath: path.join(stencilDir, 'config.yaml'),
+      name: 'StencilConfigError',
+    } as Partial<StencilConfigError>);
+  });
+
+  it('throws StencilConfigError when placeholder_end is empty', async () => {
+    const projectDir = await makeTempDir('stencil-config-project');
+    const stencilDir = path.join(projectDir, '.stencil');
+    await writeConfig(stencilDir, "placeholder_end: ''");
+
+    await expect(loadStencilConfig(stencilDir)).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
+      field: 'placeholder_end',
+      filePath: path.join(stencilDir, 'config.yaml'),
+      name: 'StencilConfigError',
+    } as Partial<StencilConfigError>);
+  });
+
+  it('throws StencilConfigError when placeholder delimiters are identical in one file', async () => {
+    const projectDir = await makeTempDir('stencil-config-project');
+    const stencilDir = path.join(projectDir, '.stencil');
+    await writeConfig(stencilDir, ["placeholder_start: '[['", "placeholder_end: '[['"].join('\n'));
+
+    await expect(loadStencilConfig(stencilDir)).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
+      field: 'placeholder_start',
+      filePath: path.join(stencilDir, 'config.yaml'),
+      name: 'StencilConfigError',
+    } as Partial<StencilConfigError>);
+  });
+
+  it('throws StencilConfigError when merged delimiter values become identical', async () => {
+    const projectDir = await makeTempDir('stencil-config-project');
+    const globalDir = await makeTempDir('stencil-config-global');
+
+    await writeConfig(globalDir, "placeholder_start: '[['");
+    await writeConfig(path.join(projectDir, '.stencil'), "placeholder_end: '[['");
+
+    await expect(
+      loadStencilConfig(path.join(projectDir, '.stencil'), globalDir),
+    ).rejects.toMatchObject({
+      code: StencilErrorCode.CONFIG_INVALID,
+      field: 'placeholder_start',
+      filePath: '<runtime>',
+      name: 'StencilConfigError',
+    } as Partial<StencilConfigError>);
+  });
 });

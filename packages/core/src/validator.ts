@@ -1,11 +1,13 @@
-// Validation logic for templates and placeholder definitions.
+import type { PlaceholderDelimiters } from './placeholders.js';
 import type { Template, ValidationIssue, ValidationResult } from './types.js';
+
+// Validation logic for templates and placeholder definitions.
+import { DEFAULT_PLACEHOLDER_DELIMITERS, extractPlaceholderTokens } from './placeholders.js';
 
 // ── Regex constants ────────────────────────────────────
 // Architecture §3.4
 const KEBAB_CASE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SNAKE_CASE_RE = /^[a-z0-9]+(_[a-z0-9]+)*$/;
-const PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g;
 
 // ── Public API ────────────────────────────────────────
 
@@ -16,9 +18,13 @@ const PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g;
  *   - valid: true  → no Error-severity issues (warnings are allowed)
  *   - valid: false → at least one Error-severity issue exists
  */
-export function validateTemplate(template: Template): ValidationResult {
+export function validateTemplate(
+  template: Template,
+  options: { delimiters?: PlaceholderDelimiters } = {},
+): ValidationResult {
   const issues: ValidationIssue[] = [];
   const { body, frontmatter } = template;
+  const delimiters = options.delimiters ?? DEFAULT_PLACEHOLDER_DELIMITERS;
 
   // ── V1: name present ──────────────────────────────────
   if (!frontmatter.name || frontmatter.name.trim() === '') {
@@ -100,7 +106,7 @@ export function validateTemplate(template: Template): ValidationResult {
   });
 
   // ── Body cross-checks (V8 and V9) ─────────────────────
-  const bodyTokens = extractBodyTokens(body);
+  const bodyTokens = extractPlaceholderTokens(body, delimiters);
   const declaredNames = new Set(placeholders.map((p) => p.name).filter(Boolean));
 
   // V8: body references undeclared placeholder (ignore $ctx.*)
@@ -108,7 +114,7 @@ export function validateTemplate(template: Template): ValidationResult {
     if (token.startsWith('$ctx.')) continue;
     if (!declaredNames.has(token)) {
       issues.push({
-        message: `Body references undeclared placeholder: "{{${token}}}"`,
+        message: `Body references undeclared placeholder: "${renderPlaceholderToken(token, delimiters)}"`,
         severity: 'warning',
       });
     }
@@ -261,17 +267,6 @@ export function validateFrontmatter(raw: unknown): ValidationResult {
 
 // ── Internal helpers ──────────────────────────────────
 
-/**
- * Extracts all {{token}} references from a body string.
- * Returns a Set of trimmed token strings (e.g. "entity_name", "$ctx.date").
- */
-function extractBodyTokens(body: string): Set<string> {
-  const tokens = new Set<string>();
-  const re = new RegExp(PLACEHOLDER_RE.source, 'g');
-  let match: null | RegExpExecArray;
-  while ((match = re.exec(body)) !== null) {
-    const token = match[1]?.trim();
-    if (token) tokens.add(token);
-  }
-  return tokens;
+function renderPlaceholderToken(token: string, delimiters: PlaceholderDelimiters): string {
+  return `${delimiters.start}${token}${delimiters.end}`;
 }

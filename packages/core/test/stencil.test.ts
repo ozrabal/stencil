@@ -769,6 +769,51 @@ describe('Stencil.validate()', () => {
     expect(result.valid).toBe(true);
     expect(result.issues.some((issue) => issue.severity === 'warning')).toBe(true);
   });
+
+  it('uses configured custom delimiters during validation', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["placeholder_start: '[['", "placeholder_end: ']]'"].join('\n'),
+    );
+    await stencil.create(
+      {
+        ...makeFrontmatter('custom-validate'),
+        placeholders: [{ description: 'Entity name', name: 'entity', required: true }],
+      },
+      'Create endpoint for [[entity]]',
+    );
+
+    const result = await stencil.validate('custom-validate');
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it('reports placeholder warnings against the active delimiter pair', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["placeholder_start: '[['", "placeholder_end: ']]'"].join('\n'),
+    );
+    await stencil.create(
+      {
+        ...makeFrontmatter('custom-warning'),
+        placeholders: [{ description: 'Entity name', name: 'entity', required: true }],
+      },
+      'Create endpoint for {{entity}}',
+    );
+
+    const result = await stencil.validate('custom-warning');
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Placeholder "entity" is declared but not referenced in the body',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
 });
 
 describe('Stencil.resolve()', () => {
@@ -833,6 +878,44 @@ describe('Stencil.resolve()', () => {
     await stencil.create(makeFrontmatter('config-context'), 'Team: {{$ctx.team_name}}');
 
     const result = await stencil.resolve('config-context', {});
+    expect(result.resolvedBody).toBe('Team: Platform');
+  });
+
+  it('resolves explicit placeholders using configured custom delimiters', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["placeholder_start: '[['", "placeholder_end: ']]'"].join('\n'),
+    );
+    await stencil.create(
+      {
+        ...makeFrontmatter('custom-delimiter-template'),
+        placeholders: [{ description: 'Entity name', name: 'entity', required: true }],
+      },
+      'Create endpoint for [[entity]]',
+    );
+
+    const result = await stencil.resolve('custom-delimiter-template', { entity: 'Invoice' });
+    expect(result.resolvedBody).toBe('Create endpoint for Invoice');
+    expect(result.placeholders[0]).toMatchObject({
+      name: 'entity',
+      source: 'explicit',
+      value: 'Invoice',
+    });
+  });
+
+  it('resolves $ctx values using configured custom delimiters', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      [
+        'custom_context:',
+        "  team_name: 'Platform'",
+        "placeholder_start: '[['",
+        "placeholder_end: ']]'",
+      ].join('\n'),
+    );
+    await stencil.create(makeFrontmatter('custom-delimiter-context'), 'Team: [[ $ctx.team_name ]]');
+
+    const result = await stencil.resolve('custom-delimiter-context', {});
     expect(result.resolvedBody).toBe('Team: Platform');
   });
 
@@ -948,6 +1031,34 @@ describe('Stencil.resolve()', () => {
     expect(result.resolvedBody).toBe('Team: Core');
   });
 
+  it('applies runtime delimiter overrides after file-based config', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["placeholder_start: '{{'", "placeholder_end: '}}'"].join('\n'),
+    );
+
+    const stencilWithOverrides = new Stencil({
+      config: {
+        placeholderEnd: ']]',
+        placeholderStart: '[[',
+      },
+      projectDir,
+    });
+
+    await stencilWithOverrides.create(
+      {
+        ...makeFrontmatter('override-config-delimiters'),
+        placeholders: [{ description: 'Entity name', name: 'entity', required: true }],
+      },
+      'Create endpoint for [[entity]]',
+    );
+
+    const result = await stencilWithOverrides.resolve('override-config-delimiters', {
+      entity: 'Invoice',
+    });
+    expect(result.resolvedBody).toBe('Create endpoint for Invoice');
+  });
+
   it('returns unresolvedCount when a required placeholder has no value', async () => {
     const frontmatter: TemplateFrontmatter = {
       description: 'Needs input',
@@ -1013,6 +1124,15 @@ describe('Stencil.resolve()', () => {
     );
 
     await expect(stencil.init()).rejects.toBeInstanceOf(StencilConfigError);
+  });
+
+  it('throws a typed config error when configured delimiters are invalid', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["placeholder_start: ''"].join('\n'),
+    );
+
+    await expect(stencil.resolve('nonexistent', {})).rejects.toBeInstanceOf(StencilConfigError);
   });
 });
 

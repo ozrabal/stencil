@@ -1,9 +1,9 @@
-// Placeholder resolution: substitutes {{placeholder}} tokens with resolved values.
-// Architecture §3.5
+import type { PlaceholderDelimiters } from './placeholders.js';
 import type { ResolutionInput, ResolutionResult, ResolvedPlaceholder, Template } from './types.js';
 
-/** Regex that matches all {{token}} occurrences in a template body. */
-const PLACEHOLDER_REGEX = /\{\{([^}]+)\}\}/g;
+// Placeholder resolution: substitutes {{placeholder}} tokens with resolved values.
+// Architecture §3.5
+import { buildPlaceholderRegex, DEFAULT_PLACEHOLDER_DELIMITERS } from './placeholders.js';
 
 /**
  * Resolves all placeholders in a template body using the provided inputs.
@@ -14,9 +14,14 @@ const PLACEHOLDER_REGEX = /\{\{([^}]+)\}\}/g;
  *   3. default
  *   4. unresolved
  */
-export function resolveTemplate(template: Template, input: ResolutionInput): ResolutionResult {
+export function resolveTemplate(
+  template: Template,
+  input: ResolutionInput,
+  options: { delimiters?: PlaceholderDelimiters } = {},
+): ResolutionResult {
   const { context, explicit } = input;
   const declared = template.frontmatter.placeholders ?? [];
+  const delimiters = options.delimiters ?? DEFAULT_PLACEHOLDER_DELIMITERS;
 
   const resolvedMap = new Map<string, string>();
   const placeholders: ResolvedPlaceholder[] = [];
@@ -45,7 +50,8 @@ export function resolveTemplate(template: Template, input: ResolutionInput): Res
     (placeholder) => placeholder.source === 'unresolved',
   ).length;
 
-  const resolvedBody = template.body.replace(PLACEHOLDER_REGEX, (match, token: string) => {
+  const placeholderRegex = buildPlaceholderRegex(delimiters);
+  const resolvedBody = template.body.replace(placeholderRegex, (match, token: string) => {
     const trimmed = token.trim();
 
     if (trimmed.startsWith('$ctx.')) {

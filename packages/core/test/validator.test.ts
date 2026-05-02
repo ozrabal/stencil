@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateFrontmatter, validateTemplate } from '../src/validator.js';
 import type { Template } from '../src/types.js';
+import type { PlaceholderDelimiters } from '../src/placeholders.js';
 
 // ── Helpers ───────────────────────────────────────────
 
@@ -25,11 +26,24 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
   };
 }
 
+const customDelimiters: PlaceholderDelimiters = {
+  end: ']]',
+  start: '[[',
+};
+
 // ── validateTemplate — happy path ─────────────────────
 
 describe('validateTemplate — happy path', () => {
   it('returns valid=true and empty issues for a correct template', () => {
     const result = validateTemplate(makeTemplate());
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it('returns valid=true for a correct template with custom delimiters', () => {
+    const result = validateTemplate(makeTemplate({ body: 'Hello [[entity_name]]' }), {
+      delimiters: customDelimiters,
+    });
     expect(result.valid).toBe(true);
     expect(result.issues).toHaveLength(0);
   });
@@ -61,6 +75,86 @@ describe('validateTemplate — happy path', () => {
     });
     const result = validateTemplate(template);
     expect(result.valid).toBe(false);
+  });
+});
+
+describe('validateTemplate — custom delimiters', () => {
+  it('warns about undeclared placeholders using the configured delimiters in the message', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello [[unknown_name]]',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Body references undeclared placeholder: "[[unknown_name]]"',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
+
+  it('warns when a declared placeholder is not used with the configured delimiters', () => {
+    const result = validateTemplate(makeTemplate({ body: 'Hello world' }), {
+      delimiters: customDelimiters,
+    });
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Placeholder "entity_name" is declared but not referenced in the body',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
+
+  it('ignores $ctx tokens when checking undeclared placeholders', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Team [[ $ctx.team_name ]]',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(
+      result.issues.some(
+        (issue) => issue.severity === 'warning' && issue.message.includes('undeclared placeholder'),
+      ),
+    ).toBe(false);
+  });
+
+  it('treats wrong delimiter pairs as missing placeholder usage rather than matching them', () => {
+    const result = validateTemplate(makeTemplate({ body: 'Hello {{entity_name}}' }), {
+      delimiters: customDelimiters,
+    });
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Placeholder "entity_name" is declared but not referenced in the body',
+          severity: 'warning',
+        }),
+      ]),
+    );
+    expect(result.issues.some((issue) => issue.message.includes('undeclared placeholder'))).toBe(
+      false,
+    );
   });
 });
 
