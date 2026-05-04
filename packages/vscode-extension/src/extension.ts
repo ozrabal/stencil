@@ -1,9 +1,22 @@
-import type * as vscode from 'vscode';
+import * as vscode from 'vscode';
 
-export function activate(_context: vscode.ExtensionContext): void {
-  // TODO: register commands and providers
+import { registerCreateTemplateCommand } from './commands/createTemplate.js';
+import { registerListTemplatesCommand } from './commands/listTemplates.js';
+import { registerRunTemplateCommand } from './commands/runTemplate.js';
+import {
+  STENCIL_TEMPLATES_VIEW_ID,
+  TemplateTreeProvider,
+} from './providers/templateTreeProvider.js';
+
+export function activate(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    registerRunTemplateCommand(),
+    registerCreateTemplateCommand(),
+    registerListTemplatesCommand(),
+    vscode.window.registerTreeDataProvider(STENCIL_TEMPLATES_VIEW_ID, new TemplateTreeProvider()),
+  );
 }
 
 export function deactivate(): void {
-  // TODO: cleanup resources
+  // Nothing to dispose outside context.subscriptions.
 }

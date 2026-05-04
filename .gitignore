@@ -32,6 +32,7 @@ coverage/
 
 # VS Code extension
 *.vsix
+packages/vscode-extension/.vscode-test/
 
 # private
 prompts/

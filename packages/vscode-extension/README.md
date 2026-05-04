@@ -16,4 +16,27 @@ This extension integrates Stencil template operations into VS Code via commands 
 
 ## Status
 
-Under active development. Commands are stubs — no business logic implemented yet.
+This package now provides the Epic 1 Step 1 foundation:
+
+- the extension activates from its declared commands and tree view
+- one `Stencil` instance is cached per resolved workspace root
+- VS Code context keys are registered into the core context engine
+- command failures flow through shared VS Code message handling
+- the tree view is wired as a placeholder foundation, not full browsing UX
+
+The three contributed commands currently return intentional foundation-state messages after
+workspace and `.stencil/` checks. Real listing, creation, and execution flows are deferred to later
+Epic 1 steps.
+
+## Verification
+
+```bash
+pnpm --filter stencil-vscode typecheck
+pnpm --filter stencil-vscode build
+pnpm --filter stencil-vscode test
+```
+
+## Deferred Work
+
+This step does not implement Quick Pick browsing, template execution output, template creation
+forms, syntax contributions, diagnostics, or Claude Code integration.
