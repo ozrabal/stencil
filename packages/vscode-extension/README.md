@@ -36,6 +36,37 @@ pnpm --filter stencil-vscode build
 pnpm --filter stencil-vscode test
 ```
 
+## Run In VS Code
+
+Build the extension first:
+
+```bash
+pnpm --filter stencil-vscode build
+```
+
+Then run it in one of these ways:
+
+```bash
+# From the repo root, open VS Code and press F5
+code .
+```
+
+Use the `Run Stencil VS Code Extension` launch configuration from
+`.vscode/launch.json`. This opens an
+Extension Development Host that stays open so you can inspect the command palette and the
+`Stencil Templates` explorer view.
+
+You can also launch a development host directly from the terminal:
+
+```bash
+code \
+  --extensionDevelopmentPath=packages/vscode-extension \
+  .
+```
+
+Open a workspace that contains a `.stencil/` directory if you want the current command and tree
+placeholder flows to run through the implemented workspace checks.
+
 ## Deferred Work
 
 This step does not implement Quick Pick browsing, template execution output, template creation
