@@ -15,9 +15,16 @@ export interface MissingWorkspace {
 export type WorkspaceResolution = MissingWorkspace | ResolvedWorkspace;
 
 export interface CommandContext {
+  commandArgs: unknown[];
   stencil: Stencil;
   workspace: ResolvedWorkspace;
 }
+
+export interface RunTemplateCommandArgument {
+  templateName?: string;
+}
+
+export type RunTemplateCommandTarget = RunTemplateCommandArgument | string;
 
 export interface TemplateQuickPickTemplateItem extends vscode.QuickPickItem {
   template: Template;

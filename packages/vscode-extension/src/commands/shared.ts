@@ -13,7 +13,7 @@ interface CommandOptions {
 }
 
 export function registerWorkspaceCommand(options: CommandOptions): vscode.Disposable {
-  return vscode.commands.registerCommand(options.commandId, async () => {
+  return vscode.commands.registerCommand(options.commandId, async (...commandArgs: unknown[]) => {
     try {
       const workspace = resolveWorkspace();
       if (workspace.kind === 'missing-workspace') {
@@ -34,7 +34,7 @@ export function registerWorkspaceCommand(options: CommandOptions): vscode.Dispos
       }
 
       const stencil = getStencil(workspace);
-      await options.handler({ stencil, workspace });
+      await options.handler({ commandArgs, stencil, workspace });
     } catch (error) {
       await showCommandError(error);
     }
