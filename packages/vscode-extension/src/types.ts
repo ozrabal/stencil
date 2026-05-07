@@ -1,6 +1,6 @@
 import type * as vscode from 'vscode';
 
-import type { Stencil, Template } from './core/index.js';
+import type { ResolutionResult, Stencil, Template } from './core/index.js';
 
 export interface ResolvedWorkspace {
   kind: 'workspace';
@@ -41,4 +41,27 @@ export interface TemplateTreeItemMetadata {
   description?: string;
   kind: 'empty-state' | 'template';
   templateName?: string;
+}
+
+export interface PlaceholderPromptItem {
+  description: string;
+  name: string;
+  required: boolean;
+  retryValue?: string;
+}
+
+export interface PlaceholderPromptCancelled {
+  kind: 'cancelled';
+}
+
+export interface PlaceholderPromptCompleted {
+  kind: 'completed';
+  values: Record<string, string>;
+}
+
+export type PlaceholderPromptResult = PlaceholderPromptCancelled | PlaceholderPromptCompleted;
+
+export interface PlaceholderPromptPlan {
+  initialResolution: ResolutionResult;
+  queue: PlaceholderPromptItem[];
 }
