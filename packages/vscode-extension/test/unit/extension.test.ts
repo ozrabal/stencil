@@ -23,6 +23,11 @@ describe('activate', () => {
       commands: {
         registerCommand,
       },
+      EventEmitter: class {
+        readonly event = vi.fn();
+        dispose = vi.fn();
+        fire = vi.fn();
+      },
       languages: {
         getDiagnostics: vi.fn().mockReturnValue([]),
       },

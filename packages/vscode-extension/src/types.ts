@@ -37,6 +37,50 @@ export interface TemplateQuickPickSeparator extends vscode.QuickPickItem {
 
 export type TemplateQuickPickItem = TemplateQuickPickSeparator | TemplateQuickPickTemplateItem;
 
+export interface CreateTemplateCollectionChoiceDefault {
+  collectionName: string;
+  kind: 'default';
+}
+
+export interface CreateTemplateCollectionChoiceNamed {
+  collectionName: string;
+  kind: 'collection';
+}
+
+export interface CreateTemplateCollectionChoiceUncategorized {
+  kind: 'uncategorized';
+}
+
+export type CreateTemplateCollectionChoice =
+  | CreateTemplateCollectionChoiceDefault
+  | CreateTemplateCollectionChoiceNamed
+  | CreateTemplateCollectionChoiceUncategorized;
+
+export interface CreateTemplateCollectionQuickPickItem extends vscode.QuickPickItem {
+  choice: CreateTemplateCollectionChoice;
+}
+
+export interface CreateTemplateDraft {
+  body: string;
+  collectionChoice: CreateTemplateCollectionChoice;
+  description: string;
+  name: string;
+  tags?: string[];
+}
+
+export interface CreateTemplateWizardCancelled {
+  kind: 'cancelled';
+}
+
+export interface CreateTemplateWizardCompleted {
+  draft: CreateTemplateDraft;
+  kind: 'completed';
+}
+
+export type CreateTemplateWizardResult =
+  | CreateTemplateWizardCancelled
+  | CreateTemplateWizardCompleted;
+
 export interface TemplateTreeItemMetadata {
   description?: string;
   kind: 'empty-state' | 'template';

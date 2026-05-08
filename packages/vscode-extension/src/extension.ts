@@ -9,11 +9,13 @@ import {
 } from './providers/templateTreeProvider.js';
 
 export function activate(context: vscode.ExtensionContext): void {
+  const templateTreeProvider = new TemplateTreeProvider();
+
   context.subscriptions.push(
     registerRunTemplateCommand(),
-    registerCreateTemplateCommand(),
+    registerCreateTemplateCommand(templateTreeProvider),
     registerListTemplatesCommand(),
-    vscode.window.registerTreeDataProvider(STENCIL_TEMPLATES_VIEW_ID, new TemplateTreeProvider()),
+    vscode.window.registerTreeDataProvider(STENCIL_TEMPLATES_VIEW_ID, templateTreeProvider),
   );
 }
 

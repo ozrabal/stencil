@@ -224,6 +224,23 @@ describe('Stencil.create()', () => {
     expect(created.collection).toBe('docs');
     expect(created.filePath).toContain(`${path.sep}collections${path.sep}docs${path.sep}`);
   });
+
+  it('allows create() to bypass default_collection when collection is null', async () => {
+    await writeStencilConfig(
+      path.join(projectDir, '.stencil'),
+      ["default_collection: 'backend'"].join('\n'),
+    );
+
+    const created = await stencil.create(
+      makeFrontmatter('uncategorized-template'),
+      'Body text',
+      null,
+    );
+
+    expect(created.collection).toBeUndefined();
+    expect(created.filePath).toContain(`${path.sep}templates${path.sep}uncategorized-template.md`);
+    expect(created.filePath).not.toContain(`${path.sep}collections${path.sep}`);
+  });
 });
 
 describe('Stencil.list()', () => {

@@ -7,6 +7,16 @@ import { hasStencilWorkspaceSetup, resolveWorkspace } from '../services/workspac
 export const STENCIL_TEMPLATES_VIEW_ID = 'stencilTemplates';
 
 export class TemplateTreeProvider implements vscode.TreeDataProvider<StencilTreeItem> {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<
+    null | StencilTreeItem | undefined | void
+  >();
+
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+
+  refresh(): void {
+    this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
   getTreeItem(element: StencilTreeItem): vscode.TreeItem {
     return element;
   }

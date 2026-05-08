@@ -110,7 +110,7 @@ export class Stencil {
   async create(
     frontmatter: TemplateFrontmatter,
     body: string,
-    collection?: string,
+    collection?: null | string,
   ): Promise<Template> {
     await this.ensureRuntimeReady();
 
@@ -120,8 +120,9 @@ export class Stencil {
       frontmatter,
       source: 'project',
     };
-    const resolvedCollection = collection ?? this.runtimeConfig?.defaultCollection;
-    if (resolvedCollection !== undefined) {
+    const resolvedCollection =
+      collection === undefined ? this.runtimeConfig?.defaultCollection : collection;
+    if (resolvedCollection !== undefined && resolvedCollection !== null) {
       template.collection = resolvedCollection;
     }
 
