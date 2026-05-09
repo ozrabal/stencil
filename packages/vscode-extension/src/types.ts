@@ -81,11 +81,42 @@ export type CreateTemplateWizardResult =
   | CreateTemplateWizardCancelled
   | CreateTemplateWizardCompleted;
 
-export interface TemplateTreeItemMetadata {
+export interface EmptyStateTreeItemMetadata {
   description?: string;
-  kind: 'empty-state' | 'template';
-  templateName?: string;
+  kind: 'empty-state';
 }
+
+export interface CollectionTreeItemMetadata {
+  childTemplates: Template[];
+  collectionName: string;
+  kind: 'collection';
+}
+
+export interface GroupTreeItemMetadata {
+  childTemplates: Template[];
+  groupName: string;
+  kind: 'group';
+}
+
+export interface TemplateLeafTreeItemMetadata {
+  collectionName?: string;
+  description?: string;
+  kind: 'template';
+  source: Template['source'];
+  templateFilePath: string;
+  templateName: string;
+}
+
+export type TemplateTreeItemMetadata =
+  | CollectionTreeItemMetadata
+  | EmptyStateTreeItemMetadata
+  | GroupTreeItemMetadata
+  | TemplateLeafTreeItemMetadata;
+
+export type OpenTemplateCommandTarget =
+  | string
+  | TemplateLeafTreeItemMetadata
+  | { metadata: TemplateLeafTreeItemMetadata };
 
 export interface PlaceholderPromptItem {
   description: string;

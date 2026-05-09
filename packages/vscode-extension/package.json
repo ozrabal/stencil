@@ -11,15 +11,21 @@
     "Other"
   ],
   "activationEvents": [
+    "onCommand:stencil.openTemplate",
     "onCommand:stencil.runTemplate",
     "onCommand:stencil.createTemplate",
     "onCommand:stencil.listTemplates",
+    "onCommand:stencil.refreshTemplatesView",
     "onView:stencilTemplates",
     "workspaceContains:**/.stencil/**/*.md"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "stencil.openTemplate",
+        "title": "Stencil: Open Template"
+      },
       {
         "command": "stencil.runTemplate",
         "title": "Stencil: Run Template"
@@ -31,8 +37,34 @@
       {
         "command": "stencil.listTemplates",
         "title": "Stencil: List Templates"
+      },
+      {
+        "command": "stencil.refreshTemplatesView",
+        "title": "Stencil: Refresh Templates View",
+        "icon": "$(refresh)"
       }
     ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "stencil.openTemplate",
+          "group": "inline",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplate",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "stencil.refreshTemplatesView",
+          "group": "navigation",
+          "when": "view == stencilTemplates"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {

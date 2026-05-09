@@ -7,7 +7,7 @@ import type {
   TemplateQuickPickTemplateItem,
 } from '../types.js';
 
-const ROOT_TEMPLATES_GROUP_LABEL = 'Templates';
+export const ROOT_TEMPLATES_GROUP_LABEL = 'Templates';
 
 export function buildTemplateQuickPickItems(templates: Template[]): TemplateQuickPickItem[] {
   const items: TemplateQuickPickItem[] = [];
