@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 
 import * as vscode from 'vscode';
 
 const EXTENSION_ID = 'stencil-pm.stencil-vscode';
 const CONTRIBUTED_COMMANDS = [
+  'stencil.openTemplate',
   'stencil.runTemplate',
   'stencil.createTemplate',
   'stencil.listTemplates',
+  'stencil.refreshTemplatesView',
 ];
 
 export async function run() {
@@ -25,4 +28,29 @@ export async function run() {
       `Expected command "${commandId}" to be contributed after activation.`,
     );
   }
+
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  assert.ok(workspaceFolder, 'Expected the smoke test workspace to be open.');
+
+  const templateUri = vscode.Uri.joinPath(
+    workspaceFolder.uri,
+    '.stencil',
+    'templates',
+    'example.md',
+  );
+  const readmeUri = vscode.Uri.joinPath(workspaceFolder.uri, 'README.md');
+
+  const templateDocument = await vscode.workspace.openTextDocument(templateUri);
+  const readmeDocument = await vscode.workspace.openTextDocument(readmeUri);
+
+  assert.equal(
+    templateDocument.languageId,
+    'stencil-template',
+    `Expected ${path.basename(templateUri.fsPath)} inside .stencil/ to resolve to the stencil-template language.`,
+  );
+  assert.equal(
+    readmeDocument.languageId,
+    'markdown',
+    `Expected ${path.basename(readmeUri.fsPath)} outside .stencil/ to remain Markdown.`,
+  );
 }

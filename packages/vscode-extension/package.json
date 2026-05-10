@@ -21,6 +21,19 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "stencil-template",
+        "aliases": [
+          "Stencil Template",
+          "stencil-template"
+        ],
+        "filenamePatterns": [
+          "**/.stencil/**/*.md"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
     "commands": [
       {
         "command": "stencil.openTemplate",
@@ -72,6 +85,27 @@
           "name": "Stencil Templates"
         }
       ]
+    },
+    "grammars": [
+      {
+        "language": "stencil-template",
+        "scopeName": "text.html.markdown.stencil",
+        "path": "./syntaxes/stencil-template.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.frontmatter.stencil": "yaml"
+        },
+        "unbalancedBracketScopes": [
+          "markup.underline.link.markdown",
+          "punctuation.definition.list.begin.markdown"
+        ]
+      }
+    ],
+    "configurationDefaults": {
+      "[stencil-template]": {
+        "editor.unicodeHighlight.ambiguousCharacters": false,
+        "editor.unicodeHighlight.invisibleCharacters": false,
+        "diffEditor.ignoreTrimWhitespace": false
+      }
     }
   },
   "scripts": {

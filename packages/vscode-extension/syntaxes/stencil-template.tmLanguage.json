@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Stencil Template",
+  "scopeName": "text.html.markdown.stencil",
+  "patterns": [
+    {
+      "include": "#frontmatter"
+    },
+    {
+      "include": "#context-placeholder"
+    },
+    {
+      "include": "#placeholder"
+    },
+    {
+      "include": "text.html.markdown"
+    }
+  ],
+  "repository": {
+    "frontmatter": {
+      "begin": "^(---)\\s*$",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.frontmatter.begin.stencil"
+        }
+      },
+      "end": "^(---)\\s*$",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.frontmatter.end.stencil"
+        }
+      },
+      "name": "meta.embedded.block.frontmatter.stencil",
+      "patterns": [
+        {
+          "include": "source.yaml"
+        }
+      ]
+    },
+    "context-placeholder": {
+      "begin": "\\{\\{(?=\\$ctx(?:\\.[A-Za-z_][A-Za-z0-9_]*)+\\}\\})",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.placeholder.begin.stencil"
+        }
+      },
+      "end": "\\}\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.placeholder.end.stencil"
+        }
+      },
+      "name": "meta.interpolation.context.stencil",
+      "patterns": [
+        {
+          "match": "\\$ctx\\b",
+          "name": "variable.language.context.stencil"
+        },
+        {
+          "match": "\\.",
+          "name": "punctuation.accessor.dot.stencil"
+        },
+        {
+          "match": "[A-Za-z_][A-Za-z0-9_]*",
+          "name": "variable.other.context.segment.stencil"
+        }
+      ]
+    },
+    "placeholder": {
+      "begin": "\\{\\{(?=\\s*[A-Za-z_][A-Za-z0-9_]*\\s*\\}\\})",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.placeholder.begin.stencil"
+        }
+      },
+      "end": "\\}\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.placeholder.end.stencil"
+        }
+      },
+      "name": "meta.interpolation.placeholder.stencil",
+      "patterns": [
+        {
+          "match": "[A-Za-z_][A-Za-z0-9_]*",
+          "name": "variable.other.placeholder.stencil"
+        }
+      ]
+    }
+  }
+}
