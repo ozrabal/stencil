@@ -18,10 +18,18 @@ Use this checklist in an Extension Development Host for the Epic 1 MVP.
    Expected result: the resolved prompt opens in a new untitled Markdown editor with no manual placeholder prompts.
 7. Run `Stencil: Run Template` for a template with unresolved placeholders.
    Expected result: placeholder values are requested one at a time with Input Boxes, in frontmatter order, and the fully resolved prompt opens in a new untitled Markdown editor.
-8. Open a file under `.stencil/**/*.md`.
-   Expected result: the file resolves to the `stencil-template` language and placeholder-aware syntax highlighting is visible.
-9. Confirm the full flow does not depend on any extra UI surface.
-   Expected result: no Webview, preview panel, CodeLens, diagnostics UI, autocomplete UI, or Claude Code extension dependency is required.
+8. Cancel `Stencil: Run Template` from the template picker.
+   Expected result: the run exits quietly with no error message and no resolved output editor opens.
+9. Cancel `Stencil: Run Template` during placeholder prompting.
+   Expected result: the run shows a cancellation information message and no partial resolved output editor opens.
+10. Run the same template from the `Stencil Templates` Explorer item context action.
+    Expected result: the run follows the same prompting, cancellation, and editor-output behavior as the Command Palette entrypoint.
+11. Request a non-editor run target through a focused unit test or internal caller.
+    Expected result: the service returns a typed informational outcome for unsupported or unavailable targets instead of throwing a generic error.
+12. Open a file under `.stencil/**/*.md`.
+    Expected result: the file resolves to the `stencil-template` language and placeholder-aware syntax highlighting is visible.
+13. Confirm the full flow does not depend on any extra UI surface.
+    Expected result: no Webview, preview panel, CodeLens, diagnostics UI, autocomplete UI, or Claude Code extension dependency is required.
 
 ## Suggested Validation Commands
 

@@ -2,7 +2,8 @@ import path from 'node:path';
 import * as vscode from 'vscode';
 
 import type { Stencil, Template } from '../core/index.js';
-import type { ResolvedWorkspace, RunTemplateCommandTarget } from '../types.js';
+import type { ResolvedWorkspace } from '../types.js';
+import type { RunTemplateRequestTarget } from './runOptions.js';
 
 import {
   buildTemplateQuickPickItems,
@@ -10,30 +11,49 @@ import {
 } from './templateQuickPick.js';
 
 interface ResolveRunTemplateTargetOptions {
-  commandArgs: unknown[];
+  requestedTarget?: RunTemplateRequestTarget;
   stencil: Stencil;
   workspace: ResolvedWorkspace;
 }
 
+export interface RunTemplateTargetSelectedResult {
+  kind: 'selected';
+  templateName: string;
+}
+
+export interface RunTemplateTargetNotSelectedResult {
+  kind: 'not-selected';
+  reason: 'no-templates-available' | 'picker-cancelled';
+}
+
+export type ResolveRunTemplateTargetResult =
+  | RunTemplateTargetNotSelectedResult
+  | RunTemplateTargetSelectedResult;
+
 export async function resolveRunTemplateTarget(
   options: ResolveRunTemplateTargetOptions,
-): Promise<string | undefined> {
-  const explicitTarget = resolveExplicitTarget(options.commandArgs);
-  if (explicitTarget !== undefined) {
-    return explicitTarget;
+): Promise<ResolveRunTemplateTargetResult> {
+  if (options.requestedTarget !== undefined) {
+    return {
+      kind: 'selected',
+      templateName: options.requestedTarget.templateName,
+    };
   }
 
   const templates = await options.stencil.list();
   const activeTemplateName = resolveActiveTemplateName(templates, options.workspace);
   if (activeTemplateName !== undefined) {
-    return activeTemplateName;
+    return {
+      kind: 'selected',
+      templateName: activeTemplateName,
+    };
   }
 
   if (templates.length === 0) {
-    await vscode.window.showInformationMessage(
-      'No Stencil templates were found in this workspace.',
-    );
-    return undefined;
+    return {
+      kind: 'not-selected',
+      reason: 'no-templates-available',
+    };
   }
 
   const selected = await vscode.window.showQuickPick(buildTemplateQuickPickItems(templates), {
@@ -42,41 +62,16 @@ export async function resolveRunTemplateTarget(
   });
 
   if (!isTemplateQuickPickTemplateItem(selected)) {
-    return undefined;
+    return {
+      kind: 'not-selected',
+      reason: 'picker-cancelled',
+    };
   }
 
-  return selected.template.frontmatter.name;
-}
-
-function resolveExplicitTarget(commandArgs: unknown[]): string | undefined {
-  for (const commandArg of commandArgs) {
-    const templateName = extractTemplateName(commandArg);
-    if (templateName !== undefined) {
-      return templateName;
-    }
-  }
-
-  return undefined;
-}
-
-function extractTemplateName(commandArg: unknown): string | undefined {
-  if (typeof commandArg === 'string' && commandArg.length > 0) {
-    return commandArg;
-  }
-
-  if (!isRunTemplateCommandTarget(commandArg)) {
-    return undefined;
-  }
-
-  return typeof commandArg.templateName === 'string' && commandArg.templateName.length > 0
-    ? commandArg.templateName
-    : undefined;
-}
-
-function isRunTemplateCommandTarget(
-  value: unknown,
-): value is Exclude<RunTemplateCommandTarget, string> {
-  return typeof value === 'object' && value !== null && 'templateName' in value;
+  return {
+    kind: 'selected',
+    templateName: selected.template.frontmatter.name,
+  };
 }
 
 function resolveActiveTemplateName(

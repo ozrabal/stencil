@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Template } from '../../../src/core/index.js';
 
 describe('resolveRunTemplateTarget', () => {
-  const showInformationMessage = vi.fn();
   const showQuickPick = vi.fn();
   const list = vi.fn();
 
@@ -22,7 +21,6 @@ describe('resolveRunTemplateTarget', () => {
   beforeEach(() => {
     vi.resetModules();
 
-    showInformationMessage.mockReset();
     showQuickPick.mockReset();
     list.mockReset();
     activeTextEditor = undefined;
@@ -35,36 +33,21 @@ describe('resolveRunTemplateTarget', () => {
         get activeTextEditor() {
           return activeTextEditor;
         },
-        showInformationMessage,
         showQuickPick,
       },
     }));
   });
 
-  it('returns an explicit string command target without listing templates', async () => {
+  it('returns an explicit request target without listing templates', async () => {
     const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
 
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: ['alpha'],
+    const result = await resolveRunTemplateTarget({
+      requestedTarget: { templateName: 'alpha' },
       stencil: { list } as never,
-      workspace,
+      workspace: workspace as never,
     });
 
-    expect(templateName).toBe('alpha');
-    expect(list).not.toHaveBeenCalled();
-    expect(showQuickPick).not.toHaveBeenCalled();
-  });
-
-  it('returns an explicit object command target without listing templates', async () => {
-    const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
-
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: [{ templateName: 'beta' }],
-      stencil: { list } as never,
-      workspace,
-    });
-
-    expect(templateName).toBe('beta');
+    expect(result).toEqual({ kind: 'selected', templateName: 'alpha' });
     expect(list).not.toHaveBeenCalled();
     expect(showQuickPick).not.toHaveBeenCalled();
   });
@@ -85,13 +68,12 @@ describe('resolveRunTemplateTarget', () => {
     };
 
     const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: [],
+    const result = await resolveRunTemplateTarget({
       stencil: { list } as never,
-      workspace,
+      workspace: workspace as never,
     });
 
-    expect(templateName).toBe('beta');
+    expect(result).toEqual({ kind: 'selected', templateName: 'beta' });
     expect(list).toHaveBeenCalledTimes(1);
     expect(showQuickPick).not.toHaveBeenCalled();
   });
@@ -115,13 +97,12 @@ describe('resolveRunTemplateTarget', () => {
     });
 
     const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: [{ unsupported: true }],
+    const result = await resolveRunTemplateTarget({
       stencil: { list } as never,
-      workspace,
+      workspace: workspace as never,
     });
 
-    expect(templateName).toBe('alpha');
+    expect(result).toEqual({ kind: 'selected', templateName: 'alpha' });
     expect(showQuickPick).toHaveBeenCalledWith(
       [
         { kind: -1, label: 'Templates' },
@@ -139,35 +120,29 @@ describe('resolveRunTemplateTarget', () => {
     );
   });
 
-  it('returns undefined when the quick pick is cancelled', async () => {
+  it('returns a picker cancellation outcome when the quick pick is cancelled', async () => {
     list.mockResolvedValue([createTemplate({ name: 'alpha' })]);
     showQuickPick.mockResolvedValue(undefined);
 
     const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: [],
+    const result = await resolveRunTemplateTarget({
       stencil: { list } as never,
-      workspace,
+      workspace: workspace as never,
     });
 
-    expect(templateName).toBeUndefined();
-    expect(showInformationMessage).not.toHaveBeenCalled();
+    expect(result).toEqual({ kind: 'not-selected', reason: 'picker-cancelled' });
   });
 
-  it('shows the empty-state message when no templates are available', async () => {
+  it('returns an empty-state outcome when no templates are available', async () => {
     list.mockResolvedValue([]);
 
     const { resolveRunTemplateTarget } = await import('../../../src/services/runTemplateTarget.js');
-    const templateName = await resolveRunTemplateTarget({
-      commandArgs: [],
+    const result = await resolveRunTemplateTarget({
       stencil: { list } as never,
-      workspace,
+      workspace: workspace as never,
     });
 
-    expect(templateName).toBeUndefined();
-    expect(showInformationMessage).toHaveBeenCalledWith(
-      'No Stencil templates were found in this workspace.',
-    );
+    expect(result).toEqual({ kind: 'not-selected', reason: 'no-templates-available' });
     expect(showQuickPick).not.toHaveBeenCalled();
   });
 });

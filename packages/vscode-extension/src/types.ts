@@ -24,7 +24,11 @@ export interface RunTemplateCommandArgument {
   templateName?: string;
 }
 
-export type RunTemplateCommandTarget = RunTemplateCommandArgument | string;
+export type RunTemplateCommandTarget =
+  | RunTemplateCommandArgument
+  | string
+  | TemplateLeafTreeItemMetadata
+  | { metadata: TemplateLeafTreeItemMetadata };
 
 export interface TemplateQuickPickTemplateItem extends vscode.QuickPickItem {
   template: Template;

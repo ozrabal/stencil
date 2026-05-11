@@ -22,6 +22,37 @@ The extension does not require terminal setup for normal MVP use. `Create Templa
 
 If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt opens immediately in a new untitled Markdown editor. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without opening partial output.
 
+## Run Service Contract
+
+Epic 1 moves run orchestration behind one extension-owned service in [`src/services/runTemplateService.ts`](./src/services/runTemplateService.ts).
+
+The run flow is split into explicit seams:
+
+- target resolution in [`src/services/runTemplateTarget.ts`](./src/services/runTemplateTarget.ts)
+- placeholder collection in [`src/services/placeholderInput.ts`](./src/services/placeholderInput.ts)
+- run request and internal options in [`src/services/runOptions.ts`](./src/services/runOptions.ts)
+- delivery adapters in [`src/services/delivery/`](./src/services/delivery/)
+- capability checks in [`src/services/delivery/capabilities.ts`](./src/services/delivery/capabilities.ts)
+
+The current supported state after Epic 1 is intentionally narrow:
+
+- `editor` delivery with `default` mode is supported end to end
+- `copilot-chat`, `clipboard`, and `lm-api` targets have typed contracts and capability probes, but no delivery implementation yet
+- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, and unavailable modes are normalized as typed run outcomes before messaging
+
+Current entrypoints all converge on the same request shape:
+
+- Command Palette runs
+- tree item runs from the `Stencil Templates` Explorer view
+- active-editor auto-target resolution when no explicit template is supplied
+
+## Next Integration Points
+
+- Epic 3 may replace or expand placeholder/input collection semantics, but should do it behind the placeholder planning and collection seam rather than inside commands.
+- Epic 4 should add Copilot Chat delivery by implementing a delivery adapter and capability policy for `copilot-chat`.
+- Epic 6 should own automatic fallback priority between future targets rather than reintroducing branching in command handlers.
+- Epic 7 should add LM API execution and streaming UI behind the existing run options and delivery capability contracts.
+
 `Stencil: Create Template` walks through a small authoring wizard for name, description, tags, collection, and a body seed. The created template is saved through `@stencil-pm/core`, opened in the editor, and the tree view is refreshed.
 
 `Stencil: List Templates` shows a grouped Quick Pick and opens the selected template source file. The Explorer view provides the same browsing surface with `Open Template` and `Run Template` actions on template items.
@@ -37,6 +68,8 @@ If a template resolves from defaults and `$ctx.*` values alone, the resolved pro
 - The extension keeps one cached `Stencil` instance per workspace root instead of rebuilding core services on every command.
 - Activation stays narrow: commands, the tree view, and `.stencil/**/*.md` file detection wake the extension only when relevant.
 - Placeholder collection stays on Input Boxes only for MVP, which avoids Webview startup and preview synchronization overhead.
+- Run target resolution lists templates only when no explicit target or active template match exists, which avoids unnecessary Quick Pick setup and keeps the happy path cheap.
+- Delivery capability probing is side-effect free and short-circuits unsupported targets before any template loading or placeholder prompting work happens.
 
 ## Verification
 

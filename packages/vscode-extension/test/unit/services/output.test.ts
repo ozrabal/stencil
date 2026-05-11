@@ -33,6 +33,7 @@ describe('openResolvedTemplateOutput', () => {
     });
     expect(showTextDocument).toHaveBeenCalledWith(document);
     expect(result).toEqual({
+      deliveryTarget: 'editor',
       deliveryTargetLabel: 'new editor',
       documentUri: document.uri,
     });

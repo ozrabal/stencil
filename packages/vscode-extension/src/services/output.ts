@@ -1,22 +1,15 @@
-import * as vscode from 'vscode';
+import type { RunTemplateDeliveryResult } from './delivery/types.js';
 
-export interface OutputDeliveryResult {
-  deliveryTargetLabel: string;
-  documentUri: vscode.Uri;
-}
+import { editorDeliveryAdapter } from './delivery/editorDelivery.js';
+
+export type OutputDeliveryResult = RunTemplateDeliveryResult;
 
 export async function openResolvedTemplateOutput(
   resolvedBody: string,
 ): Promise<OutputDeliveryResult> {
-  const document = await vscode.workspace.openTextDocument({
-    content: resolvedBody,
-    language: 'markdown',
+  return editorDeliveryAdapter.deliver({
+    mode: 'default',
+    resolvedBody,
+    templateName: 'resolved-output',
   });
-
-  await vscode.window.showTextDocument(document);
-
-  return {
-    deliveryTargetLabel: 'new editor',
-    documentUri: document.uri,
-  };
 }
