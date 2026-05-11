@@ -22,8 +22,8 @@ Stencil follows a **layered monorepo architecture** with a portable core and too
 │  │              │  │              │  │              │  │         │ │
 │  │ Skills/SKILL │  │ Commands,    │  │ AGENTS.md,   │  │         │ │
 │  │ .md files +  │  │ TreeView,    │  │ CLI scripts  │  │         │ │
-│  │ shell scripts│  │ Webview,     │  │              │  │         │ │
-│  │              │  │ CodeLens     │  │              │  │         │ │
+│  │ shell scripts│  │ syntax       │  │              │  │         │ │
+│  │              │  │ support      │  │              │  │         │ │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └────┬────┘ │
 │         │                 │                 │                │      │
 ├─────────┴─────────────────┴─────────────────┴────────────────┴──────┤
@@ -666,6 +666,16 @@ Claude Code reads this JSON and, if there are unresolved placeholders, asks the 
 
 The VS Code adapter imports `@stencil-pm/core` directly as a TypeScript dependency (no shell scripts, no CLI — direct API calls).
 
+For the shipped Epic 1 MVP, the VS Code adapter is intentionally narrow:
+
+- Command Palette commands for run, create, and list flows
+- Explorer Tree View browsing for collections and templates
+- Sequential `showInputBox()` prompting for unresolved placeholders
+- Resolved output opened in a new untitled Markdown editor
+- Basic `.stencil/**/*.md` language mapping and placeholder-aware syntax support
+
+Later-phase ideas such as Webviews, preview panels, CodeLens, diagnostics, autocomplete, or Claude Code extension routing are not part of the current MVP contract.
+
 #### Architecture
 
 ```
@@ -674,9 +684,9 @@ The VS Code adapter imports `@stencil-pm/core` directly as a TypeScript dependen
 │                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │  Extension Entry Point (extension.ts)                         │  │
-│  │  - Activates on workspace containing .stencil/ directory      │  │
-│  │  - Registers commands, providers, views                       │  │
-│  │  - Instantiates Stencil core with VSCodeContextProvider       │  │
+│  │  - Registers commands, providers, and the Explorer view       │  │
+│  │  - Defers workspace checks to command/provider boundaries     │  │
+│  │  - Uses cached Stencil instances per workspace root           │  │
 │  └──────────────────────────┬────────────────────────────────────┘  │
 │                              │                                      │
 │          ┌───────────────────┼───────────────────┐                  │
@@ -685,13 +695,11 @@ The VS Code adapter imports `@stencil-pm/core` directly as a TypeScript dependen
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐        │
 │  │  Commands     │  │  Providers   │  │  Language Support │        │
 │  │              │  │              │  │                   │        │
-│  │ runTemplate  │  │ TreeView     │  │ CompletionProvider│        │
-│  │ createTemp.  │  │ (sidebar     │  │ ({{}} autocomplete│        │
+│  │ runTemplate  │  │ TreeView     │  │ TextMate grammar  │        │
+│  │ createTemp.  │  │ (sidebar     │  │ + file association│        │
 │  │ listTemp.    │  │  browser)    │  │                   │        │
-│  │ deleteTemp.  │  │              │  │ DiagnosticProvider│        │
-│  │ searchTemp.  │  │ CodeLens     │  │ (unused/undeclared│        │
-│  │              │  │ (inline run/ │  │  warnings)        │        │
-│  │              │  │  preview)    │  │                   │        │
+│  │ openTemplate │  │ Context      │  │                   │        │
+│  │ refreshView  │  │ provider     │  │                   │        │
 │  └──────┬───────┘  └──────┬───────┘  └─────────┬─────────┘        │
 │         │                 │                     │                  │
 │         └─────────────────┼─────────────────────┘                  │
@@ -700,12 +708,11 @@ The VS Code adapter imports `@stencil-pm/core` directly as a TypeScript dependen
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │  UI Layer                                                    │  │
 │  │                                                              │  │
-│  │  PlaceholderForm (Webview)     TemplatePreview (Webview)     │  │
-│  │  ┌─────────────────────────┐   ┌────────────────────────┐    │  │
-│  │  │ Dynamic form generated  │   │ Shows resolved prompt  │    │  │
-│  │  │ from placeholder defs   │   │ with syntax highlighting│   │  │
-│  │  │ with validation         │   │ before execution       │    │  │
-│  │  └─────────────────────────┘   └────────────────────────┘    │  │
+│  │  Quick Pick               Sequential Input Boxes             │  │
+│  │  ┌─────────────────────┐  ┌──────────────────────────────┐  │  │
+│  │  │ Template selection  │  │ One unresolved placeholder   │  │  │
+│  │  │ for list/run flows  │  │ per prompt, in declared order│  │  │
+│  │  └─────────────────────┘  └──────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                           │                                        │
 │                           ▼                                        │
@@ -719,111 +726,47 @@ The VS Code adapter imports `@stencil-pm/core` directly as a TypeScript dependen
 
 ```typescript
 // extension.ts
-export async function activate(context: vscode.ExtensionContext) {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) return;
+export function activate(context: vscode.ExtensionContext): void {
+  const templateTreeProvider = new TemplateTreeProvider();
 
-  // Initialize core with VS Code context provider
-  const stencil = new Stencil({
-    projectDir: workspaceRoot,
-    contextProviders: [new VSCodeContextProvider()],
-  });
-
-  // Register commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('stencil.run', () => runTemplate(stencil)),
-    vscode.commands.registerCommand('stencil.create', () => createTemplate(stencil)),
-    vscode.commands.registerCommand('stencil.list', () => listTemplates(stencil)),
-    vscode.commands.registerCommand('stencil.delete', () => deleteTemplate(stencil)),
-    vscode.commands.registerCommand('stencil.init', () => initStencil(stencil)),
+    registerOpenTemplateCommand(),
+    registerRunTemplateCommand(),
+    registerCreateTemplateCommand(templateTreeProvider),
+    registerListTemplatesCommand(),
+    registerRefreshTemplatesViewCommand(templateTreeProvider),
+    vscode.window.registerTreeDataProvider('stencilTemplates', templateTreeProvider),
   );
-
-  // Register providers
-  const treeProvider = new TemplateTreeProvider(stencil);
-  vscode.window.registerTreeDataProvider('stencilTemplates', treeProvider);
-
-  const codeLensProvider = new TemplateCodeLensProvider(stencil);
-  vscode.languages.registerCodeLensProvider({ pattern: '**/.stencil/**/*.md' }, codeLensProvider);
-
-  // Register language features for template files
-  const completionProvider = new PlaceholderCompletionProvider(stencil);
-  vscode.languages.registerCompletionItemProvider(
-    { pattern: '**/.stencil/**/*.md' },
-    completionProvider,
-    '{', // trigger character
-  );
-
-  const diagnosticCollection = vscode.languages.createDiagnosticCollection('stencil');
-  const diagnosticProvider = new TemplateDiagnosticProvider(stencil, diagnosticCollection);
-  context.subscriptions.push(diagnosticCollection);
 }
 ```
 
 #### Interactive Fill Strategy
 
-The VS Code adapter uses different UI patterns based on placeholder count:
+The MVP uses one interaction model for all unresolved placeholders:
 
 ```
-Placeholders = 0  → Execute immediately (no form)
-Placeholders = 1-2 → Sequential vscode.window.showInputBox()
-Placeholders ≥ 3  → Webview form panel
-
-All paths → Preview step (optional) → Output delivery
+Placeholders resolved by context/defaults only → Open output immediately
+Unresolved placeholders remain               → Prompt sequentially with showInputBox()
+Prompt cancelled                              → Stop without partial output
 ```
 
-**Webview form** renders an HTML form dynamically generated from placeholder definitions:
-
-```typescript
-// ui/placeholderForm.ts
-function generateFormHtml(template: Template, contextValues: Record<string, string>): string {
-  // Generates HTML with:
-  // - Input field per placeholder (pre-filled with defaults)
-  // - "Required" indicators
-  // - Read-only section showing auto-resolved $ctx.* values
-  // - Preview / Run / Cancel buttons
-  // - postMessage() back to extension on submit
-}
-```
+This keeps the adapter fast and predictable for Epic 1 by avoiding Webview startup, cross-panel state, and preview synchronization work.
 
 #### Output Delivery
 
-After resolution, the VS Code adapter supports multiple output targets (user-configurable in settings):
+After resolution, the MVP writes output to one target only:
 
 ```typescript
-type OutputTarget = 'claude-code' | 'clipboard' | 'new-editor' | 'terminal';
-
-async function deliverOutput(resolvedBody: string, target: OutputTarget): Promise<void> {
-  switch (target) {
-    case 'claude-code':
-      // Detect Claude Code extension, send via its API
-      const claudeExt = vscode.extensions.getExtension('anthropic.claude-code');
-      if (claudeExt) {
-        await claudeExt.exports.sendMessage(resolvedBody);
-      } else {
-        // Fallback to clipboard
-        await vscode.env.clipboard.writeText(resolvedBody);
-        vscode.window.showInformationMessage(
-          'Prompt copied to clipboard (Claude Code not detected)',
-        );
-      }
-      break;
-    case 'clipboard':
-      await vscode.env.clipboard.writeText(resolvedBody);
-      break;
-    case 'new-editor':
-      const doc = await vscode.workspace.openTextDocument({
-        content: resolvedBody,
-        language: 'markdown',
-      });
-      await vscode.window.showTextDocument(doc);
-      break;
-    case 'terminal':
-      const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('Stencil');
-      terminal.sendText(resolvedBody);
-      break;
-  }
+async function openResolvedTemplateOutput(resolvedBody: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument({
+    content: resolvedBody,
+    language: 'markdown',
+  });
+  await vscode.window.showTextDocument(doc);
 }
 ```
+
+No Claude Code routing, clipboard fallback, terminal delivery, or output-target setting is required for the current extension flow.
 
 #### VS Code Extension Manifest (package.json contributes)
 
@@ -831,47 +774,31 @@ async function deliverOutput(resolvedBody: string, target: OutputTarget): Promis
 {
   "contributes": {
     "commands": [
-      { "command": "stencil.run", "title": "Stencil: Run Template" },
-      { "command": "stencil.create", "title": "Stencil: Create Template" },
-      { "command": "stencil.list", "title": "Stencil: List Templates" },
-      { "command": "stencil.delete", "title": "Stencil: Delete Template" },
-      { "command": "stencil.init", "title": "Stencil: Initialize" },
-      { "command": "stencil.preview", "title": "Stencil: Preview Template" }
+      { "command": "stencil.runTemplate", "title": "Stencil: Run Template" },
+      { "command": "stencil.createTemplate", "title": "Stencil: Create Template" },
+      { "command": "stencil.listTemplates", "title": "Stencil: List Templates" },
+      { "command": "stencil.openTemplate", "title": "Stencil: Open Template" },
+      { "command": "stencil.refreshTemplatesView", "title": "Stencil: Refresh Templates View" }
     ],
     "views": {
       "explorer": [
         {
           "id": "stencilTemplates",
-          "name": "Stencil Templates",
-          "when": "workspaceFolderCount > 0"
+          "name": "Stencil Templates"
         }
       ]
     },
     "menus": {
       "view/item/context": [
-        { "command": "stencil.run", "when": "viewItem == stencilTemplate" },
-        { "command": "stencil.delete", "when": "viewItem == stencilTemplate" }
+        { "command": "stencil.openTemplate", "when": "viewItem == stencil.template" },
+        { "command": "stencil.runTemplate", "when": "viewItem == stencil.template" }
       ]
-    },
-    "configuration": {
-      "title": "Stencil",
-      "properties": {
-        "stencil.outputTarget": {
-          "type": "string",
-          "default": "claude-code",
-          "enum": ["claude-code", "clipboard", "new-editor", "terminal"],
-          "description": "Where to send resolved prompts"
-        },
-        "stencil.globalTemplatesDir": {
-          "type": "string",
-          "default": "~/.stencil",
-          "description": "Path to global templates directory"
-        }
-      }
     }
   }
 }
 ```
+
+The actual package also contributes a `stencil-template` language, a bundled TextMate grammar, and per-language editor defaults for template files.
 
 ### 4.3 Codex Adapter (Future — Phase 5)
 
@@ -1524,32 +1451,32 @@ Added:
 ### Phase 3
 
 ```
-Added:
-  ✓ Typed placeholders (type field in PlaceholderDefinition)
-  ✓ Placeholder validation in Resolver
-  ✓ Conditional sections (new syntax: {{#if}}...{{/if}})
-  ✓ Template includes ({{> template-name}})
-  ✓ VS Code: Webview form, CodeLens, diagnostics, autocomplete
+Planned:
+  - Typed placeholders (type field in PlaceholderDefinition)
+  - Placeholder validation in Resolver
+  - Conditional sections (new syntax: {{#if}}...{{/if}})
+  - Template includes ({{> template-name}})
+  - VS Code: Webview form, CodeLens, diagnostics, autocomplete
 ```
 
 ### Phase 4
 
 ```
-Added:
-  ✓ RemoteStorageProvider (implements StorageProvider interface)
-  ✓ Registry protocol (fetch, publish, version check)
-  ✓ Template versioning + conflict resolution
-  ✓ VS Code: remote browser in sidebar
+Planned:
+  - RemoteStorageProvider (implements StorageProvider interface)
+  - Registry protocol (fetch, publish, version check)
+  - Template versioning + conflict resolution
+  - VS Code: remote browser in sidebar
 ```
 
 ### Phase 5
 
 ```
-Added:
-  ✓ Codex adapter
-  ✓ Plugin API (adapters can extend core via hooks)
-  ✓ Template testing framework
-  ✓ Analytics (opt-in telemetry)
+Planned:
+  - Codex adapter
+  - Plugin API (adapters can extend core via hooks)
+  - Template testing framework
+  - Analytics (opt-in telemetry)
 ```
 
 ---

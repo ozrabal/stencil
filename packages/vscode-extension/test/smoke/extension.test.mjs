@@ -28,6 +28,10 @@ export async function run() {
       `Expected command "${commandId}" to be contributed after activation.`,
     );
   }
+  await assert.doesNotReject(
+    vscode.commands.executeCommand('stencil.refreshTemplatesView'),
+    'Expected the tree refresh command to execute in a real workspace host.',
+  );
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(workspaceFolder, 'Expected the smoke test workspace to be open.');

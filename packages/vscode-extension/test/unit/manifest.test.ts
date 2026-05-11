@@ -5,14 +5,66 @@ import { describe, expect, it } from 'vitest';
 
 const packageJsonPath = path.resolve(import.meta.dirname, '../../package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+  activationEvents?: string[];
   contributes?: {
+    commands?: Array<Record<string, unknown>>;
     configurationDefaults?: Record<string, Record<string, unknown>>;
     grammars?: Array<Record<string, unknown>>;
     languages?: Array<Record<string, unknown>>;
+    menus?: Record<string, Array<Record<string, unknown>>>;
+    views?: Record<string, Array<Record<string, unknown>>>;
   };
 };
 
 describe('package contributions', () => {
+  it('contributes only the supported Epic 1 command surface', () => {
+    expect(packageJson.activationEvents).toEqual([
+      'onCommand:stencil.openTemplate',
+      'onCommand:stencil.runTemplate',
+      'onCommand:stencil.createTemplate',
+      'onCommand:stencil.listTemplates',
+      'onCommand:stencil.refreshTemplatesView',
+      'onView:stencilTemplates',
+      'workspaceContains:**/.stencil/**/*.md',
+    ]);
+
+    expect(packageJson.contributes?.commands).toEqual([
+      { command: 'stencil.openTemplate', title: 'Stencil: Open Template' },
+      { command: 'stencil.runTemplate', title: 'Stencil: Run Template' },
+      { command: 'stencil.createTemplate', title: 'Stencil: Create Template' },
+      { command: 'stencil.listTemplates', title: 'Stencil: List Templates' },
+      {
+        command: 'stencil.refreshTemplatesView',
+        icon: '$(refresh)',
+        title: 'Stencil: Refresh Templates View',
+      },
+    ]);
+    expect(packageJson.contributes?.views?.explorer).toEqual([
+      { id: 'stencilTemplates', name: 'Stencil Templates' },
+    ]);
+    expect(packageJson.contributes?.menus).toMatchObject({
+      'view/item/context': [
+        {
+          command: 'stencil.openTemplate',
+          group: 'inline',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplate',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+      ],
+      'view/title': [
+        {
+          command: 'stencil.refreshTemplatesView',
+          group: 'navigation',
+          when: 'view == stencilTemplates',
+        },
+      ],
+    });
+  });
+
   it('contributes a stencil-template language scoped to .stencil markdown files', () => {
     const stencilTemplateLanguage = packageJson.contributes?.languages?.find(
       (language) => language.id === 'stencil-template',
@@ -41,5 +93,15 @@ describe('package contributions', () => {
       'editor.unicodeHighlight.ambiguousCharacters': false,
       'editor.unicodeHighlight.invisibleCharacters': false,
     });
+  });
+
+  it('does not advertise unsupported MVP settings or extra surfaces', () => {
+    expect(packageJson.contributes).not.toHaveProperty('configuration');
+
+    const commandIds =
+      packageJson.contributes?.commands?.map((command) => command.command).sort() ?? [];
+    expect(commandIds).not.toContain('stencil.previewTemplate');
+    expect(commandIds).not.toContain('stencil.deleteTemplate');
+    expect(commandIds).not.toContain('stencil.init');
   });
 });

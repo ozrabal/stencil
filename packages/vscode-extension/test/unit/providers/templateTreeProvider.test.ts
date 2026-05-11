@@ -82,6 +82,19 @@ describe('TemplateTreeProvider', () => {
     expect(hasStencilWorkspaceSetup).not.toHaveBeenCalled();
   });
 
+  it('returns setup guidance when the workspace has no .stencil directory yet', async () => {
+    hasStencilWorkspaceSetup.mockResolvedValue(false);
+
+    const { TemplateTreeProvider } = await import('../../../src/providers/templateTreeProvider.js');
+    const provider = new TemplateTreeProvider();
+
+    const items = await provider.getChildren();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.label).toBe('Add a .stencil/ directory to enable template browsing.');
+    expect(getStencil).not.toHaveBeenCalled();
+  });
+
   it('builds root groups from visible templates plus empty collections', async () => {
     const list = vi.fn().mockResolvedValue([
       createTemplate({

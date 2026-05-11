@@ -1,86 +1,78 @@
 # Stencil Template Manager — VS Code Extension
 
-VS Code adapter for Stencil template management.
+VS Code adapter for the shipped Stencil MVP. This package keeps template logic in `@stencil-pm/core` and exposes a narrow VS Code surface around it.
 
-## Overview
+## MVP Surface
 
-This extension integrates Stencil template operations into VS Code via commands and a sidebar tree view. It delegates business logic to `@stencil-pm/core`.
+- `Stencil: Run Template`
+- `Stencil: Create Template`
+- `Stencil: List Templates`
+- `Stencil Templates` Explorer view for browsing collections and templates
+- `.stencil/**/*.md` language mapping with placeholder-aware syntax highlighting
 
-## Commands
+The extension does not require terminal setup for normal MVP use. `Create Template` bootstraps `.stencil/` on first use when needed.
 
-| Command                  | Description                             |
-| ------------------------ | --------------------------------------- |
-| Stencil: Run Template    | Render a template with resolved context |
-| Stencil: Create Template | Create a new template                   |
-| Stencil: List Templates  | Browse all available templates          |
+## Command Behavior
 
-## Status
+`Stencil: Run Template` resolves its target in this order:
 
-This package now provides the Epic 1 Step 3 foundation:
+1. An explicit command argument
+2. The active `.stencil/**/*.md` file
+3. A Quick Pick from the available templates
 
-- the extension activates from its declared commands and tree view
-- one `Stencil` instance is cached per resolved workspace root
-- VS Code context keys are registered into the core context engine
-- command failures flow through shared VS Code message handling
-- `Stencil: List Templates` shows a grouped Quick Pick backed by core template discovery
-- selecting a template from the Quick Pick opens the source `.md` file in the editor
-- `Stencil: Run Template` resolves a template from a command argument, the active template file, or a Quick Pick fallback
-- templates that need no manual input, or are satisfied by defaults and `$ctx.*` values, open resolved output in a new untitled Markdown editor
-- templates that still require placeholder input stop with an informational message instead of opening partial output
-- the tree view is wired as a placeholder foundation, not full browsing UX
+If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt opens immediately in a new untitled Markdown editor. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without opening partial output.
 
-`Stencil: Run Template` is now a real no-input execution flow after workspace and `.stencil/`
-checks. `Stencil: Create Template` still returns an intentional foundation-state message and is
-deferred to a later Epic 1 step. Sequential placeholder prompting is intentionally deferred to the
-next execution step.
+`Stencil: Create Template` walks through a small authoring wizard for name, description, tags, collection, and a body seed. The created template is saved through `@stencil-pm/core`, opened in the editor, and the tree view is refreshed.
+
+`Stencil: List Templates` shows a grouped Quick Pick and opens the selected template source file. The Explorer view provides the same browsing surface with `Open Template` and `Run Template` actions on template items.
+
+## Workspace Expectations
+
+- A VS Code workspace folder is required. Commands show actionable guidance when no workspace is open.
+- `Run Template`, `List Templates`, and the tree view expect a `.stencil/` directory to exist.
+- `Create Template` can be used in a first-time workspace and initializes `.stencil/` before saving.
+
+## Performance Notes
+
+- The extension keeps one cached `Stencil` instance per workspace root instead of rebuilding core services on every command.
+- Activation stays narrow: commands, the tree view, and `.stencil/**/*.md` file detection wake the extension only when relevant.
+- Placeholder collection stays on Input Boxes only for MVP, which avoids Webview startup and preview synchronization overhead.
 
 ## Verification
 
 ```bash
 pnpm --filter stencil-vscode typecheck
-pnpm --filter stencil-vscode build
 pnpm --filter stencil-vscode test
+pnpm --filter stencil-vscode build
 ```
 
 ## Run In VS Code
 
-Build the extension first:
+Build first:
 
 ```bash
 pnpm --filter stencil-vscode build
 ```
 
-Then run it in one of these ways:
+Then open the repo in VS Code and start the `Run Stencil VS Code Extension` launch configuration, or launch a development host directly:
 
 ```bash
-# From the repo root, open VS Code and press F5
-code .
+code --extensionDevelopmentPath=packages/vscode-extension .
 ```
 
-Use the `Run Stencil VS Code Extension` launch configuration from
-`.vscode/launch.json`. This opens an
-Extension Development Host that stays open so you can inspect the command palette and the
-`Stencil Templates` explorer view.
+Use a workspace that contains templates under `.stencil/` if you want to exercise run, list, tree, and syntax flows immediately.
 
-You can also launch a development host directly from the terminal:
+## Manual Acceptance
 
-```bash
-code \
-  --extensionDevelopmentPath=packages/vscode-extension \
-  .
-```
+The maintainer checklist for Step 8 lives in [docs/manual-acceptance.md](./docs/manual-acceptance.md).
 
-Open a workspace that contains a `.stencil/` directory if you want the current command and tree
-flows to run through the implemented workspace checks. With that setup in place, run
-`Stencil: List Templates` from the Command Palette to browse templates grouped by collection and
-open the selected template file.
+## Non-Goals
 
-Run `Stencil: Run Template` from the Command Palette to execute a template. The command first uses
-an explicit template target when invoked with one, otherwise it tries the active `.stencil/`
-template file, then falls back to a grouped Quick Pick. If resolution succeeds without manual
-placeholder entry, the resolved prompt opens in a new untitled Markdown editor.
+This MVP does not ship:
 
-## Deferred Work
-
-This step does not implement manual placeholder prompting, template creation forms, syntax
-contributions, diagnostics, alternate output targets, or Claude Code integration.
+- Webview placeholder forms
+- Preview panels or confirmation steps
+- Dry-run mode
+- Diagnostics UI or autocomplete
+- CodeLens
+- Claude Code extension routing or any other cross-extension output target
