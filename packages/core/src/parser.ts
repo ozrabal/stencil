@@ -5,11 +5,17 @@ import type {
   PlaceholderDefinition,
   PlaceholderType,
   Template,
+  TemplateBodyToken,
   TemplateFrontmatter,
   TemplateSource,
 } from './types.js';
 
 import { StencilError, StencilErrorCode } from './errors.js';
+import {
+  DEFAULT_PLACEHOLDER_DELIMITERS,
+  extractTemplateBodyTokens,
+  type PlaceholderDelimiters,
+} from './placeholders.js';
 
 const DELIMITER = '---';
 const COLLECTION_PATH_RE = /[/\\]collections[/\\]([^/\\]+)[/\\]/;
@@ -95,6 +101,7 @@ export function parseTemplate(
   filePath: string,
   raw: string,
   source: TemplateSource = 'project',
+  options: { delimiters?: PlaceholderDelimiters } = {},
 ): Template {
   const lines = raw.split(/\r?\n/);
 
@@ -162,9 +169,11 @@ export function parseTemplate(
     .join('\n')
     .trim();
   const collection = detectCollection(filePath);
+  const bodyTokens = parseTemplateBodyTokens(body, options.delimiters);
 
   const template: Template = {
     body,
+    bodyTokens,
     filePath,
     frontmatter,
     source,
@@ -175,6 +184,13 @@ export function parseTemplate(
   }
 
   return template;
+}
+
+export function parseTemplateBodyTokens(
+  body: string,
+  delimiters: PlaceholderDelimiters = DEFAULT_PLACEHOLDER_DELIMITERS,
+): TemplateBodyToken[] {
+  return extractTemplateBodyTokens(body, delimiters);
 }
 
 function detectCollection(filePath: string): string | undefined {

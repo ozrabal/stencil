@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { StencilError, StencilErrorCode } from '../src/errors.js';
-import { ParseError, parseTemplate, TemplateNotFoundError } from '../src/parser.js';
+import {
+  ParseError,
+  parseTemplate,
+  parseTemplateBodyTokens,
+  TemplateNotFoundError,
+} from '../src/parser.js';
 
 function makeRaw(frontmatter: string, body = ''): string {
   return `---\n${frontmatter}\n---\n\n${body}`;
@@ -23,6 +28,7 @@ describe('parseTemplate', () => {
       expect(result.frontmatter.description).toBe('A test template');
       expect(result.frontmatter.version).toBe(1);
       expect(result.body).toBe('Hello world');
+      expect(result.bodyTokens).toEqual([]);
     });
 
     it('parses optional frontmatter fields', () => {
@@ -63,6 +69,38 @@ describe('parseTemplate', () => {
       const result = parseTemplate('/fake/t.md', `---\n${MINIMAL_FRONTMATTER}\n---`);
 
       expect(result.body).toBe('');
+    });
+
+    it('parses body token metadata for inline inputs and context placeholders', () => {
+      const result = parseTemplate(
+        '/project/.stencil/templates/inline.md',
+        makeRaw(
+          MINIMAL_FRONTMATTER,
+          'Project {{input:project_name}} Review {{input:review_type:general}} File {{$ctx.active_file_name}}',
+        ),
+      );
+
+      expect(result.bodyTokens).toEqual([
+        {
+          inputName: 'project_name',
+          kind: 'inline-input',
+          raw: 'input:project_name',
+          token: 'input:project_name',
+        },
+        {
+          defaultValue: 'general',
+          inputName: 'review_type',
+          kind: 'inline-input',
+          raw: 'input:review_type:general',
+          token: 'input:review_type:general',
+        },
+        {
+          contextKey: 'active_file_name',
+          kind: 'context',
+          raw: '$ctx.active_file_name',
+          token: '$ctx.active_file_name',
+        },
+      ]);
     });
   });
 
@@ -261,5 +299,35 @@ describe('parseTemplate', () => {
       expect(withoutLine.code).toBe(StencilErrorCode.FRONTMATTER_SCHEMA_ERROR);
       expect(withoutLine.line).toBeUndefined();
     });
+  });
+});
+
+describe('parseTemplateBodyTokens', () => {
+  it('classifies legacy, inline, and invalid inline tokens', () => {
+    expect(
+      parseTemplateBodyTokens(
+        'Legacy {{project_name}} Inline {{input:review_type:general}} Broken {{input:}}',
+      ),
+    ).toEqual([
+      {
+        kind: 'legacy-placeholder',
+        placeholderName: 'project_name',
+        raw: 'project_name',
+        token: 'project_name',
+      },
+      {
+        defaultValue: 'general',
+        inputName: 'review_type',
+        kind: 'inline-input',
+        raw: 'input:review_type:general',
+        token: 'input:review_type:general',
+      },
+      {
+        kind: 'invalid-inline-input',
+        raw: 'input:',
+        reason: 'missing-name',
+        token: 'input:',
+      },
+    ]);
   });
 });

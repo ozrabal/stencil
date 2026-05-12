@@ -61,6 +61,27 @@ Diagnostics: {{$ctx.diagnostics_count}} total, {{$ctx.diagnostics_error_count}} 
 
 If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt opens immediately in a new untitled Markdown editor. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without opening partial output.
 
+## Template Input Syntax
+
+`Stencil: Run Template` prompts from the normalized input contract returned by `@stencil-pm/core`.
+
+Supported body forms:
+
+- `{{input:name}}` for a required runtime input
+- `{{input:name:default value}}` for a runtime input with an inline default
+- `{{name}}` as a legacy compatibility form
+- `{{$ctx.key}}` for context values
+
+Frontmatter `placeholders` remain supported for metadata overlays and legacy templates. When both body and frontmatter describe the same logical input, body syntax defines that the input exists and any inline default, while frontmatter contributes description, required/optional metadata, type, options, and a fallback default.
+
+Migration notes:
+
+- Prefer `{{input:name}}` for new templates.
+- Keep frontmatter `placeholders` when you want user-facing descriptions or future typed metadata.
+- Reusing the same inline input multiple times is supported.
+- Reusing the same inline input with different defaults fails validation.
+- Mixing `{{input:name}}` and `{{name}}` for the same input still works, but core emits a warning.
+
 ## Run Service Contract
 
 Epic 1 moves run orchestration behind one extension-owned service in [`src/services/runTemplateService.ts`](./src/services/runTemplateService.ts).
@@ -87,7 +108,6 @@ Current entrypoints all converge on the same request shape:
 
 ## Next Integration Points
 
-- Epic 3 may replace or expand placeholder/input collection semantics, but should do it behind the placeholder planning and collection seam rather than inside commands.
 - Epic 4 should add Copilot Chat delivery by implementing a delivery adapter and capability policy for `copilot-chat`.
 - Epic 6 should own automatic fallback priority between future targets rather than reintroducing branching in command handlers.
 - Epic 7 should add LM API execution and streaming UI behind the existing run options and delivery capability contracts.

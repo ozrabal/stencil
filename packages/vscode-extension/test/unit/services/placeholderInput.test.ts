@@ -16,7 +16,7 @@ describe('placeholderInput', () => {
     }));
   });
 
-  it('builds a queue only for unresolved placeholders in frontmatter order', async () => {
+  it('builds a queue only for unresolved inputs in core-provided order', async () => {
     const { buildPlaceholderPromptPlan } =
       await import('../../../src/services/placeholderInput.js');
     const template = createTemplate({
@@ -27,30 +27,43 @@ describe('placeholderInput', () => {
       ],
     });
     const initialResolution = createResolutionResult([
-      { name: 'third_name', source: 'unresolved', value: '' },
-      { name: 'first_name', source: 'default', value: 'A' },
-      { name: 'second_name', source: 'unresolved', value: '' },
+      { description: 'Third', name: 'third_name', required: true, source: 'unresolved' },
+      { description: 'First', name: 'first_name', required: false, source: 'default', value: 'A' },
+      { description: 'Second', name: 'second_name', required: false, source: 'unresolved' },
     ]);
 
     const plan = buildPlaceholderPromptPlan(template, initialResolution);
 
     expect(plan.queue).toEqual([
-      { description: 'Second', name: 'second_name', required: false },
       { description: 'Third', name: 'third_name', required: true },
+      { description: 'Second', name: 'second_name', required: false },
     ]);
   });
 
-  it('throws when unresolved placeholders are missing frontmatter metadata', async () => {
+  it('uses generated prompt descriptions for inline-only unresolved inputs', async () => {
     const { buildPlaceholderPromptPlan } =
       await import('../../../src/services/placeholderInput.js');
     const template = createTemplate({ placeholders: [] });
     const initialResolution = createResolutionResult([
-      { name: 'missing_name', source: 'unresolved', value: '' },
+      { name: 'project_name', required: true, source: 'unresolved' },
     ]);
 
-    expect(() => buildPlaceholderPromptPlan(template, initialResolution)).toThrow(
-      'Template "alpha" has unresolved placeholders missing frontmatter metadata: missing_name.',
-    );
+    expect(buildPlaceholderPromptPlan(template, initialResolution).queue).toEqual([
+      { description: 'Project name', name: 'project_name', required: true },
+    ]);
+  });
+
+  it('builds a queue for inline-only unresolved inputs without frontmatter metadata', async () => {
+    const { buildPlaceholderPromptPlan } =
+      await import('../../../src/services/placeholderInput.js');
+    const template = createTemplate({ placeholders: [] });
+    const initialResolution = createResolutionResult([
+      { name: 'project_name', required: true, source: 'unresolved' },
+    ]);
+
+    expect(buildPlaceholderPromptPlan(template, initialResolution).queue).toEqual([
+      { description: 'Project name', name: 'project_name', required: true },
+    ]);
   });
 
   it('collects multiple placeholders sequentially', async () => {
@@ -162,13 +175,26 @@ describe('placeholderInput', () => {
   }
 
   function createResolutionResult(
-    placeholders: ResolutionResult['placeholders'],
+    inputs: Array<
+      Partial<ResolutionResult['inputs'][number]> &
+        Pick<ResolutionResult['inputs'][number], 'name' | 'required' | 'source'>
+    >,
   ): ResolutionResult {
+    const normalizedInputs = inputs.map((input) => ({
+      name: input.name,
+      required: input.required,
+      source: input.source,
+      sources: input.sources ?? ['inline'],
+      value: input.value ?? '',
+      ...(input.defaultValue !== undefined ? { defaultValue: input.defaultValue } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+    }));
+
     return {
-      placeholders,
+      inputs: normalizedInputs,
+      placeholders: normalizedInputs.map(({ name, source, value }) => ({ name, source, value })),
       resolvedBody: '# Prompt',
-      unresolvedCount: placeholders.filter((placeholder) => placeholder.source === 'unresolved')
-        .length,
+      unresolvedCount: normalizedInputs.filter((input) => input.source === 'unresolved').length,
     };
   }
 });

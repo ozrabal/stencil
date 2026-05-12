@@ -1,9 +1,20 @@
 import type { PlaceholderDelimiters } from './placeholders.js';
-import type { ResolutionInput, ResolutionResult, ResolvedPlaceholder, Template } from './types.js';
+import type {
+  ResolutionInput,
+  ResolutionResult,
+  ResolvedInputState,
+  ResolvedPlaceholder,
+  Template,
+} from './types.js';
 
 // Placeholder resolution: substitutes {{placeholder}} tokens with resolved values.
 // Architecture §3.5
-import { buildPlaceholderRegex, DEFAULT_PLACEHOLDER_DELIMITERS } from './placeholders.js';
+import {
+  buildPlaceholderRegex,
+  classifyTemplateBodyToken,
+  DEFAULT_PLACEHOLDER_DELIMITERS,
+} from './placeholders.js';
+import { normalizeTemplateInputs } from './validator.js';
 
 /**
  * Resolves all placeholders in a template body using the provided inputs.
@@ -20,47 +31,94 @@ export function resolveTemplate(
   options: { delimiters?: PlaceholderDelimiters } = {},
 ): ResolutionResult {
   const { context, explicit } = input;
-  const declared = template.frontmatter.placeholders ?? [];
   const delimiters = options.delimiters ?? DEFAULT_PLACEHOLDER_DELIMITERS;
+  const normalizedInputs = normalizeTemplateInputs(template, { delimiters }).inputs;
 
   const resolvedMap = new Map<string, string>();
-  const placeholders: ResolvedPlaceholder[] = [];
-
-  for (const placeholder of declared) {
-    const { default: defaultValue, name } = placeholder;
-    let resolved: ResolvedPlaceholder;
+  const inputs: ResolvedInputState[] = normalizedInputs.map((normalizedInput) => {
+    const { defaultValue, name, required, sources } = normalizedInput;
+    const metadata = {
+      ...(defaultValue !== undefined ? { defaultValue } : {}),
+      ...(normalizedInput.description !== undefined
+        ? { description: normalizedInput.description }
+        : {}),
+    };
+    let resolved: ResolvedInputState;
 
     if (Object.hasOwn(explicit, name) && explicit[name] !== undefined) {
-      resolved = { name, source: 'explicit', value: explicit[name] };
-    } else if (Object.hasOwn(context, name) && context[name] !== undefined) {
-      resolved = { name, source: 'context', value: context[name] };
+      resolved = {
+        ...metadata,
+        name,
+        required,
+        source: 'explicit',
+        sources,
+        value: explicit[name],
+      };
+    } else if (
+      sources.includes('legacy') &&
+      Object.hasOwn(context, name) &&
+      context[name] !== undefined
+    ) {
+      resolved = {
+        ...metadata,
+        name,
+        required,
+        source: 'context',
+        sources,
+        value: context[name],
+      };
     } else if (defaultValue !== undefined) {
-      resolved = { name, source: 'default', value: defaultValue };
+      resolved = {
+        ...metadata,
+        name,
+        required,
+        source: 'default',
+        sources,
+        value: defaultValue,
+      };
     } else {
-      resolved = { name, source: 'unresolved', value: '' };
+      resolved = {
+        ...metadata,
+        name,
+        required,
+        source: 'unresolved',
+        sources,
+        value: '',
+      };
     }
 
-    placeholders.push(resolved);
     if (resolved.source !== 'unresolved') {
       resolvedMap.set(name, resolved.value);
     }
-  }
 
-  const unresolvedCount = placeholders.filter(
-    (placeholder) => placeholder.source === 'unresolved',
+    return resolved;
+  });
+
+  const placeholders: ResolvedPlaceholder[] = inputs.map(({ name, source, value }) => ({
+    name,
+    source,
+    value,
+  }));
+
+  const unresolvedCount = inputs.filter(
+    (resolvedInput) => resolvedInput.source === 'unresolved',
   ).length;
 
   const placeholderRegex = buildPlaceholderRegex(delimiters);
   const resolvedBody = template.body.replace(placeholderRegex, (match, token: string) => {
-    const trimmed = token.trim();
+    const classifiedToken = classifyTemplateBodyToken(token);
 
-    if (trimmed.startsWith('$ctx.')) {
-      const key = trimmed.slice('$ctx.'.length);
-      return context[key] ?? match;
+    switch (classifiedToken.kind) {
+      case 'context':
+        return context[classifiedToken.contextKey] ?? match;
+      case 'inline-input':
+        return resolvedMap.get(classifiedToken.inputName) ?? match;
+      case 'invalid-inline-input':
+        return match;
+      case 'legacy-placeholder':
+        return resolvedMap.get(classifiedToken.placeholderName) ?? match;
     }
-
-    return resolvedMap.get(trimmed) ?? match;
   });
 
-  return { placeholders, resolvedBody, unresolvedCount };
+  return { inputs, placeholders, resolvedBody, unresolvedCount };
 }

@@ -1,8 +1,15 @@
 import type { PlaceholderDelimiters } from './placeholders.js';
-import type { Template, ValidationIssue, ValidationResult } from './types.js';
+import type {
+  NormalizedInputDefinition,
+  PlaceholderDefinition,
+  Template,
+  TemplateInputNormalizationResult,
+  ValidationIssue,
+  ValidationResult,
+} from './types.js';
 
 // Validation logic for templates and placeholder definitions.
-import { DEFAULT_PLACEHOLDER_DELIMITERS, extractPlaceholderTokens } from './placeholders.js';
+import { DEFAULT_PLACEHOLDER_DELIMITERS, extractTemplateBodyTokens } from './placeholders.js';
 
 // ── Regex constants ────────────────────────────────────
 // Architecture §3.4
@@ -23,8 +30,9 @@ export function validateTemplate(
   options: { delimiters?: PlaceholderDelimiters } = {},
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
-  const { body, frontmatter } = template;
+  const { frontmatter } = template;
   const delimiters = options.delimiters ?? DEFAULT_PLACEHOLDER_DELIMITERS;
+  const normalization = normalizeTemplateInputs(template, { delimiters });
 
   // ── V1: name present ──────────────────────────────────
   if (!frontmatter.name || frontmatter.name.trim() === '') {
@@ -94,46 +102,155 @@ export function validateTemplate(
         seenNames.add(p.name);
       }
     }
-
-    // ── V10: required placeholder has default ─────────────
-    if (p.required === true && p.default !== undefined) {
-      issues.push({
-        field: `placeholders[${i}]`,
-        message: `Placeholder "${p.name}" is marked required but has a default value (effectively optional)`,
-        severity: 'warning',
-      });
-    }
   });
 
-  // ── Body cross-checks (V8 and V9) ─────────────────────
-  const bodyTokens = extractPlaceholderTokens(body, delimiters);
-  const declaredNames = new Set(placeholders.map((p) => p.name).filter(Boolean));
+  issues.push(...normalization.issues);
 
-  // V8: body references undeclared placeholder (ignore $ctx.*)
-  for (const token of bodyTokens) {
-    if (token.startsWith('$ctx.')) continue;
-    if (!declaredNames.has(token)) {
-      issues.push({
-        message: `Body references undeclared placeholder: "${renderPlaceholderToken(token, delimiters)}"`,
-        severity: 'warning',
-      });
+  return {
+    issues,
+    valid: issues.every((issue) => issue.severity !== 'error'),
+  };
+}
+
+export function normalizeTemplateInputs(
+  template: Template,
+  options: { delimiters?: PlaceholderDelimiters } = {},
+): TemplateInputNormalizationResult {
+  const delimiters = options.delimiters ?? DEFAULT_PLACEHOLDER_DELIMITERS;
+  const bodyTokens = extractTemplateBodyTokens(template.body, delimiters);
+  const placeholders = template.frontmatter.placeholders ?? [];
+  const issues: ValidationIssue[] = [];
+  const normalizedByName = new Map<string, MutableNormalizedInputDefinition>();
+  const frontmatterByName = new Map(
+    placeholders.map((placeholder) => [placeholder.name, placeholder]),
+  );
+  const legacyNamesInBody = new Set<string>();
+
+  for (const bodyToken of bodyTokens) {
+    switch (bodyToken.kind) {
+      case 'context':
+        continue;
+      case 'invalid-inline-input':
+        issues.push({
+          message: `Body contains invalid inline input token: "${renderPlaceholderToken(bodyToken.token, delimiters)}"`,
+          severity: 'error',
+        });
+        continue;
+      case 'inline-input': {
+        const existing = normalizedByName.get(bodyToken.inputName);
+        if (existing === undefined) {
+          normalizedByName.set(
+            bodyToken.inputName,
+            createNormalizedInputDefinition(bodyToken.inputName, bodyToken.defaultValue, 'inline'),
+          );
+          continue;
+        }
+
+        addSource(existing, 'inline');
+        if (bodyToken.defaultValue === undefined) {
+          continue;
+        }
+
+        if (existing.inlineDefaultValue === undefined) {
+          existing.inlineDefaultValue = bodyToken.defaultValue;
+          if (existing.defaultValue === undefined || existing.defaultSource === 'frontmatter') {
+            existing.defaultValue = bodyToken.defaultValue;
+            existing.defaultSource = 'inline';
+          }
+          continue;
+        }
+
+        if (existing.inlineDefaultValue !== bodyToken.defaultValue) {
+          issues.push({
+            message: `Input "${bodyToken.inputName}" has conflicting inline defaults: "${existing.inlineDefaultValue}" and "${bodyToken.defaultValue}"`,
+            severity: 'error',
+          });
+        }
+        continue;
+      }
+      case 'legacy-placeholder': {
+        legacyNamesInBody.add(bodyToken.placeholderName);
+        const frontmatterPlaceholder = frontmatterByName.get(bodyToken.placeholderName);
+        if (
+          frontmatterPlaceholder === undefined &&
+          !normalizedByName.has(bodyToken.placeholderName)
+        ) {
+          issues.push({
+            message: `Body references undeclared placeholder: "${renderPlaceholderToken(bodyToken.placeholderName, delimiters)}"`,
+            severity: 'warning',
+          });
+          continue;
+        }
+
+        const existing = normalizedByName.get(bodyToken.placeholderName);
+        if (existing !== undefined) {
+          addSource(existing, 'legacy');
+        } else {
+          normalizedByName.set(
+            bodyToken.placeholderName,
+            createNormalizedInputDefinition(bodyToken.placeholderName, undefined, 'legacy'),
+          );
+        }
+      }
     }
   }
 
-  // V9: declared placeholder not used in body
-  for (const p of placeholders) {
-    if (p.name && !bodyTokens.has(p.name)) {
+  for (const placeholder of placeholders) {
+    const existing = normalizedByName.get(placeholder.name);
+    if (existing === undefined) {
+      normalizedByName.set(
+        placeholder.name,
+        createNormalizedInputDefinition(
+          placeholder.name,
+          placeholder.default,
+          'frontmatter',
+          placeholder,
+        ),
+      );
+      continue;
+    }
+
+    addSource(existing, 'frontmatter');
+    applyFrontmatterMetadata(existing, placeholder);
+  }
+
+  const normalizedInputs = [...normalizedByName.values()].map((input) =>
+    finalizeNormalizedInputDefinition(input),
+  );
+
+  for (const input of normalizedInputs) {
+    if (input.sources.includes('inline') && input.sources.includes('legacy')) {
+      issues.push({
+        message: `Input "${input.name}" mixes inline "{{input:${input.name}}}" and legacy "{{${input.name}}}" syntax`,
+        severity: 'warning',
+      });
+    }
+
+    if (
+      input.sources.length === 1 &&
+      input.sources[0] === 'frontmatter' &&
+      !legacyNamesInBody.has(input.name)
+    ) {
       issues.push({
         field: 'placeholders',
-        message: `Placeholder "${p.name}" is declared but not referenced in the body`,
+        message: `Placeholder "${input.name}" is declared but not referenced in the body`,
+        severity: 'warning',
+      });
+    }
+
+    const frontmatterPlaceholder = frontmatterByName.get(input.name);
+    if (frontmatterPlaceholder?.required === true && input.defaultValue !== undefined) {
+      issues.push({
+        field: `placeholders[${placeholders.indexOf(frontmatterPlaceholder)}]`,
+        message: `Placeholder "${input.name}" is marked required but has a default value (effectively optional)`,
         severity: 'warning',
       });
     }
   }
 
   return {
-    issues,
-    valid: issues.every((issue) => issue.severity !== 'error'),
+    inputs: normalizedInputs,
+    issues: dedupeValidationIssues(issues),
   };
 }
 
@@ -269,4 +386,101 @@ export function validateFrontmatter(raw: unknown): ValidationResult {
 
 function renderPlaceholderToken(token: string, delimiters: PlaceholderDelimiters): string {
   return `${delimiters.start}${token}${delimiters.end}`;
+}
+
+type MutableNormalizedInputDefinition = NormalizedInputDefinition & {
+  defaultSource?: 'frontmatter' | 'inline';
+  inlineDefaultValue?: string;
+  sourceSet: Set<'frontmatter' | 'inline' | 'legacy'>;
+};
+
+function createNormalizedInputDefinition(
+  name: string,
+  defaultValue: string | undefined,
+  source: 'frontmatter' | 'inline' | 'legacy',
+  placeholder?: PlaceholderDefinition,
+): MutableNormalizedInputDefinition {
+  const sourceSet = new Set<'frontmatter' | 'inline' | 'legacy'>([source]);
+  const normalized: MutableNormalizedInputDefinition = {
+    name,
+    required: placeholder?.required ?? defaultValue === undefined,
+    sources: [...sourceSet],
+    sourceSet,
+    ...(defaultValue !== undefined ? { defaultValue } : {}),
+    ...(placeholder?.description !== undefined ? { description: placeholder.description } : {}),
+    ...(placeholder?.options !== undefined ? { options: placeholder.options } : {}),
+    ...(placeholder?.type !== undefined ? { type: placeholder.type } : {}),
+    ...(defaultValue !== undefined
+      ? { defaultSource: source === 'frontmatter' ? 'frontmatter' : 'inline' }
+      : {}),
+  };
+
+  if (source === 'inline' && defaultValue !== undefined) {
+    normalized.inlineDefaultValue = defaultValue;
+  }
+
+  return normalized;
+}
+
+function applyFrontmatterMetadata(
+  input: MutableNormalizedInputDefinition,
+  placeholder: PlaceholderDefinition,
+): void {
+  if (placeholder.description.trim().length > 0) {
+    input.description = placeholder.description;
+  }
+
+  if (placeholder.options !== undefined) {
+    input.options = placeholder.options;
+  }
+
+  if (placeholder.type !== undefined) {
+    input.type = placeholder.type;
+  }
+
+  if (input.defaultValue === undefined && placeholder.default !== undefined) {
+    input.defaultValue = placeholder.default;
+    input.defaultSource = 'frontmatter';
+  }
+
+  input.required = input.defaultValue === undefined ? placeholder.required !== false : false;
+}
+
+function finalizeNormalizedInputDefinition(
+  input: MutableNormalizedInputDefinition,
+): NormalizedInputDefinition {
+  const {
+    defaultSource: _defaultSource,
+    inlineDefaultValue: _inlineDefaultValue,
+    sourceSet,
+    ...rest
+  } = input;
+
+  return {
+    ...rest,
+    required: rest.defaultValue === undefined ? rest.required : false,
+    sources: [...sourceSet],
+  };
+}
+
+function addSource(
+  input: MutableNormalizedInputDefinition,
+  source: 'frontmatter' | 'inline' | 'legacy',
+): void {
+  input.sourceSet.add(source);
+  input.sources = [...input.sourceSet];
+}
+
+function dedupeValidationIssues(issues: ValidationIssue[]): ValidationIssue[] {
+  const seen = new Set<string>();
+
+  return issues.filter((issue) => {
+    const key = [issue.severity, issue.field ?? '', issue.line ?? '', issue.message].join('\u0000');
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }

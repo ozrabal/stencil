@@ -47,6 +47,7 @@ describe('resolveTemplate', () => {
     const result = resolveTemplate(makeTemplate('Hello world'), makeInput());
 
     expect(result).toEqual({
+      inputs: [],
       placeholders: [],
       resolvedBody: 'Hello world',
       unresolvedCount: 0,
@@ -299,5 +300,84 @@ describe('resolveTemplate', () => {
     expect(result.resolvedBody).toBe('Hello {{name}}');
     expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
     expect(result.unresolvedCount).toBe(0);
+  });
+
+  it('resolves inline-only inputs from explicit values', () => {
+    const result = resolveTemplate(
+      makeTemplate('Hello {{input:name}}'),
+      makeInput({ explicit: { name: 'Ada' } }),
+    );
+
+    expect(result.resolvedBody).toBe('Hello Ada');
+    expect(result.placeholders).toEqual([{ name: 'name', source: 'explicit', value: 'Ada' }]);
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: undefined,
+        description: undefined,
+        name: 'name',
+        required: true,
+        source: 'explicit',
+        sources: ['inline'],
+        value: 'Ada',
+      },
+    ]);
+  });
+
+  it('resolves inline defaults without frontmatter metadata', () => {
+    const result = resolveTemplate(makeTemplate('Mode: {{input:mode:draft}}'), makeInput());
+
+    expect(result.resolvedBody).toBe('Mode: draft');
+    expect(result.placeholders).toEqual([{ name: 'mode', source: 'default', value: 'draft' }]);
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: 'draft',
+        description: undefined,
+        name: 'mode',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'draft',
+      },
+    ]);
+  });
+
+  it('uses frontmatter metadata as an overlay for inline inputs', () => {
+    const result = resolveTemplate(
+      makeTemplate('Project: {{input:project_name}}', [
+        makePlaceholder('project_name', { description: 'Project name', required: true }),
+      ]),
+      makeInput({ explicit: { project_name: 'Stencil' } }),
+    );
+
+    expect(result.resolvedBody).toBe('Project: Stencil');
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: undefined,
+        description: 'Project name',
+        name: 'project_name',
+        required: true,
+        source: 'explicit',
+        sources: ['inline', 'frontmatter'],
+        value: 'Stencil',
+      },
+    ]);
+  });
+
+  it('keeps unresolved inline-only inputs in the structured input result', () => {
+    const result = resolveTemplate(makeTemplate('Owner: {{input:owner}}'), makeInput());
+
+    expect(result.resolvedBody).toBe('Owner: {{input:owner}}');
+    expect(result.unresolvedCount).toBe(1);
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: undefined,
+        description: undefined,
+        name: 'owner',
+        required: true,
+        source: 'unresolved',
+        sources: ['inline'],
+        value: '',
+      },
+    ]);
   });
 });

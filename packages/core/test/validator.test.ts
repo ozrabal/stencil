@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { validateFrontmatter, validateTemplate } from '../src/validator.js';
+import {
+  normalizeTemplateInputs,
+  validateFrontmatter,
+  validateTemplate,
+} from '../src/validator.js';
 import type { Template } from '../src/types.js';
 import type { PlaceholderDelimiters } from '../src/placeholders.js';
 
@@ -155,6 +159,105 @@ describe('validateTemplate — custom delimiters', () => {
     expect(result.issues.some((issue) => issue.message.includes('undeclared placeholder'))).toBe(
       false,
     );
+  });
+
+  it('accepts inline input tokens without undeclared-placeholder warnings', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello [[input:project_name]]',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+      { delimiters: customDelimiters },
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.issues.some((issue) => issue.message.includes('undeclared placeholder'))).toBe(
+      false,
+    );
+  });
+});
+
+describe('normalizeTemplateInputs', () => {
+  it('discovers inline-only inputs without frontmatter metadata', () => {
+    const result = normalizeTemplateInputs(
+      makeTemplate({
+        body: 'Project {{input:project_name}} Review {{input:review_type:general}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.inputs).toEqual([
+      {
+        description: undefined,
+        name: 'project_name',
+        options: undefined,
+        required: true,
+        sources: ['inline'],
+        type: undefined,
+      },
+      {
+        defaultValue: 'general',
+        description: undefined,
+        name: 'review_type',
+        options: undefined,
+        required: false,
+        sources: ['inline'],
+        type: undefined,
+      },
+    ]);
+    expect(result.issues).toEqual([]);
+  });
+
+  it('merges inline inputs with frontmatter metadata overlays', () => {
+    const result = normalizeTemplateInputs(
+      makeTemplate({
+        body: 'Project {{input:project_name}} Review {{input:review_type}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [
+            { description: 'Project name', name: 'project_name', required: true },
+            {
+              default: 'general',
+              description: 'Review type',
+              name: 'review_type',
+              required: false,
+            },
+          ],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.inputs).toEqual([
+      {
+        description: 'Project name',
+        name: 'project_name',
+        options: undefined,
+        required: true,
+        sources: ['inline', 'frontmatter'],
+        type: undefined,
+      },
+      {
+        defaultValue: 'general',
+        description: 'Review type',
+        name: 'review_type',
+        options: undefined,
+        required: false,
+        sources: ['inline', 'frontmatter'],
+        type: undefined,
+      },
+    ]);
   });
 });
 
@@ -479,6 +582,29 @@ describe('validateTemplate — V8: undeclared placeholder in body', () => {
     );
     expect(undeclared).toHaveLength(2);
   });
+
+  it('keeps warning for a raw legacy token that has no inline declaration or frontmatter metadata', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello {{project_name}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Body references undeclared placeholder: "{{project_name}}"',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
 });
 
 // ── V9: declared placeholder not used in body ─────────
@@ -507,6 +633,40 @@ describe('validateTemplate — V9: declared placeholder not used in body', () =>
   it('does not report warning when all declared placeholders are used', () => {
     const result = validateTemplate(makeTemplate());
     expect(result.issues.some((i) => i.message.includes('not referenced'))).toBe(false);
+  });
+
+  it('does not report unused-placeholder warnings when frontmatter metadata only overlays inline inputs', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello {{input:entity_name}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [{ description: 'Entity name', name: 'entity_name', required: true }],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.issues.some((i) => i.message.includes('not referenced'))).toBe(false);
+  });
+
+  it('warns when inline and legacy syntax are mixed for the same logical input', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello {{input:entity_name}} again {{entity_name}}',
+      }),
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            'Input "entity_name" mixes inline "{{input:entity_name}}" and legacy "{{entity_name}}" syntax',
+          severity: 'warning',
+        }),
+      ]),
+    );
   });
 });
 
@@ -567,6 +727,87 @@ describe('validateTemplate — V10: required placeholder with default', () => {
         (i) => i.severity === 'warning' && i.message.includes('effectively optional'),
       ),
     ).toBe(false);
+  });
+
+  it('warns when a required frontmatter placeholder gains an inline default', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Hello {{input:entity_name:Invoice}}',
+      }),
+    );
+
+    expect(
+      result.issues.some(
+        (i) =>
+          i.severity === 'warning' &&
+          i.message ===
+            'Placeholder "entity_name" is marked required but has a default value (effectively optional)',
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('validateTemplate — inline input edge cases', () => {
+  it('reports an error for conflicting inline defaults', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'One {{input:review_type:general}} Two {{input:review_type:security}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: 'Input "review_type" has conflicting inline defaults: "general" and "security"',
+          severity: 'error',
+        }),
+      ]),
+    );
+  });
+
+  it('accepts repeated identical inline defaults', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'One {{input:review_type:general}} Two {{input:review_type:general}}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(
+      result.issues.some((issue) => issue.message.includes('conflicting inline defaults')),
+    ).toBe(false);
+  });
+
+  it('reports an error for invalid inline token shapes', () => {
+    const result = validateTemplate(
+      makeTemplate({
+        body: 'Broken {{input:}} and {{input:project_name: }}',
+        frontmatter: {
+          description: 'desc',
+          name: 'test-template',
+          placeholders: [],
+          version: 1,
+        },
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.filter((issue) => issue.message.includes('invalid inline input token')),
+    ).toHaveLength(2);
   });
 });
 

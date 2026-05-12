@@ -129,7 +129,7 @@ export type PlaceholderType = 'string' | 'number' | 'boolean' | 'enum' | 'file_p
 
 export interface Template {
   frontmatter: TemplateFrontmatter;
-  body: string; // raw body with {{placeholder}} tokens
+  body: string; // raw body with {{input:name}}, {{name}}, and {{$ctx.key}} tokens
   filePath: string; // absolute path to the .md file
   collection?: string; // collection name (from directory)
   source: TemplateSource; // where this template came from
@@ -256,18 +256,18 @@ Validates a `Template` for correctness and consistency.
 
 **Validation rules (ordered by severity):**
 
-| ID  | Check                                  | Severity | Description                                                                    |
-| --- | -------------------------------------- | -------- | ------------------------------------------------------------------------------ |
-| V1  | `name` present                         | Error    | Frontmatter must have `name`                                                   |
-| V2  | `name` format                          | Error    | Must be kebab-case: `/^[a-z0-9]+(-[a-z0-9]+)*$/`                               |
-| V3  | `description` present                  | Error    | Frontmatter must have `description`                                            |
-| V4  | `version` present                      | Error    | Must be a positive integer                                                     |
-| V5  | `placeholders[].name` format           | Error    | Must be snake*case: `/^[a-z0-9]+(*[a-z0-9]+)\*$/`                              |
-| V6  | `placeholders[].description` present   | Error    | Each placeholder must have a description                                       |
-| V7  | Duplicate placeholder names            | Error    | No two placeholders with the same name                                         |
-| V8  | Body references undeclared placeholder | Warning  | `{{foo}}` in body but `foo` not in frontmatter placeholders (ignores `$ctx.*`) |
-| V9  | Declared placeholder not used in body  | Warning  | Placeholder declared in frontmatter but no `{{name}}` in body                  |
-| V10 | `default` on required placeholder      | Warning  | A required placeholder with a default is effectively optional                  |
+| ID  | Check                                 | Severity | Description                                                                                  |
+| --- | ------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| V1  | `name` present                        | Error    | Frontmatter must have `name`                                                                 |
+| V2  | `name` format                         | Error    | Must be kebab-case: `/^[a-z0-9]+(-[a-z0-9]+)*$/`                                             |
+| V3  | `description` present                 | Error    | Frontmatter must have `description`                                                          |
+| V4  | `version` present                     | Error    | Must be a positive integer                                                                   |
+| V5  | `placeholders[].name` format          | Error    | Must be snake*case: `/^[a-z0-9]+(*[a-z0-9]+)\*$/`                                            |
+| V6  | `placeholders[].description` present  | Error    | Each placeholder must have a description                                                     |
+| V7  | Duplicate placeholder names           | Error    | No two placeholders with the same name                                                       |
+| V8  | Legacy body token is undeclared       | Warning  | `{{foo}}` in body but `foo` is neither an inline input nor in frontmatter (ignores `$ctx.*`) |
+| V9  | Declared placeholder not used in body | Warning  | Placeholder declared in frontmatter but no matching `{{name}}` or `{{input:name}}` in body   |
+| V10 | `default` on required placeholder     | Warning  | A required placeholder with a default is effectively optional                                |
 
 **API:**
 
@@ -278,7 +278,7 @@ function validateFrontmatter(frontmatter: unknown): ValidationResult; // for pre
 
 ### 3.5 Resolver (`resolver.ts`)
 
-Replaces `{{placeholder}}` tokens in the template body with actual values.
+Replaces runtime input and context tokens in the template body with actual values.
 
 **Resolution Pipeline:**
 
@@ -286,14 +286,21 @@ Replaces `{{placeholder}}` tokens in the template body with actual values.
 Input: Template + ResolutionInput
 Output: ResolutionResult
 
-For each placeholder declared in frontmatter:
-  1. Check explicit values (user-provided args)        → source: 'explicit'
-  2. Check context values ($ctx.* auto-resolved)        → source: 'context'
-  3. Check default value from frontmatter               → source: 'default'
-  4. Mark as unresolved                                 → source: 'unresolved'
+Normalize runtime inputs from:
+  - inline body tokens: {{input:name}} / {{input:name:default}}
+  - frontmatter placeholder metadata overlays
+  - legacy body tokens: {{name}}
+
+For each normalized runtime input:
+  1. Check explicit values (user-provided args)         → source: 'explicit'
+  2. Check context values for legacy placeholders        → source: 'context'
+  3. Check inline default value                          → source: 'default'
+  4. Check frontmatter default value                     → source: 'default'
+  5. Mark as unresolved                                  → source: 'unresolved'
 
 For each {{token}} found in body via regex:
   - If token starts with "$ctx." → look up in context values
+  - If token starts with "input:" → resolve by normalized input name
   - Otherwise → look up in resolved placeholders map
   - If found → replace with value
   - If not found → leave token as-is (adapter handles unresolved)
@@ -317,7 +324,7 @@ const PLACEHOLDER_REGEX = /\{\{([^}]+)\}\}/g;
 - The resolver **never prompts the user**. It returns unresolved placeholders; the adapter decides how to handle them (interactive prompt, error, etc.).
 - The resolver is **idempotent** — calling it again with the same inputs produces the same output.
 - Context variables (`$ctx.*`) are resolved by the Context Engine before being passed to the resolver. The resolver itself does not execute context resolution — it receives pre-resolved values.
-- Unknown `{{tokens}}` that are not declared in frontmatter and not `$ctx.*` are left as-is with a warning in the result.
+- Unknown legacy `{{tokens}}` that are not declared inline, not declared in frontmatter, and not `$ctx.*` are left as-is with a warning in validation output.
 
 ### 3.6 Context Engine (`context.ts`)
 
@@ -1063,7 +1070,9 @@ A template file consists of two parts separated by YAML frontmatter delimiters:
 ### 6.3 Placeholder Syntax
 
 ```
-Standard:         {{placeholder_name}}
+Inline input:     {{input:placeholder_name}}
+Inline default:   {{input:placeholder_name:default value}}
+Legacy:           {{placeholder_name}}
 Context variable: {{$ctx.variable_name}}
 ```
 

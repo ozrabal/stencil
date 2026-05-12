@@ -25,6 +25,7 @@ export type PlaceholderType = 'boolean' | 'enum' | 'file_path' | 'number' | 'str
 
 export interface Template {
   body: string; // raw body with {{placeholder}} tokens
+  bodyTokens?: TemplateBodyToken[]; // parsed token metadata derived from the body
   collection?: string; // collection name (from directory)
   filePath: string; // absolute path to the .md file
   frontmatter: TemplateFrontmatter;
@@ -32,6 +33,67 @@ export interface Template {
 }
 
 export type TemplateSource = 'global' | 'project' | 'remote';
+
+export type TemplateBodyToken =
+  | ContextTemplateBodyToken
+  | InlineInputTemplateBodyToken
+  | InvalidInlineInputTemplateBodyToken
+  | LegacyPlaceholderTemplateBodyToken;
+
+interface TemplateBodyTokenBase {
+  raw: string;
+  token: string;
+}
+
+export interface ContextTemplateBodyToken extends TemplateBodyTokenBase {
+  contextKey: string;
+  kind: 'context';
+}
+
+export interface InlineInputTemplateBodyToken extends TemplateBodyTokenBase {
+  defaultValue?: string;
+  inputName: string;
+  kind: 'inline-input';
+}
+
+export interface InvalidInlineInputTemplateBodyToken extends TemplateBodyTokenBase {
+  kind: 'invalid-inline-input';
+  reason: 'empty-default' | 'missing-name';
+}
+
+export interface LegacyPlaceholderTemplateBodyToken extends TemplateBodyTokenBase {
+  kind: 'legacy-placeholder';
+  placeholderName: string;
+}
+
+export interface DiscoveredInlineInputToken extends InlineInputTemplateBodyToken {
+  occurrenceIndex: number;
+}
+
+export interface NormalizedInputDefinition {
+  defaultValue?: string;
+  description?: string;
+  name: string;
+  options?: string[];
+  required: boolean;
+  sources: Array<'frontmatter' | 'inline' | 'legacy'>;
+  type?: PlaceholderType;
+}
+
+export interface ResolvedInputState {
+  defaultValue?: string;
+  description?: string;
+  name: string;
+  required: boolean;
+  source: 'context' | 'default' | 'explicit' | 'unresolved';
+  sources: Array<'frontmatter' | 'inline' | 'legacy'>;
+  value: string;
+}
+
+export interface TemplateInputNormalizationResult {
+  inputs: NormalizedInputDefinition[];
+  issues: ValidationIssue[];
+}
 
 // ── Resolution ────────────────────────────────────────
 
@@ -49,6 +111,7 @@ export interface ResolvedPlaceholder {
 }
 
 export interface ResolutionResult {
+  inputs: ResolvedInputState[]; // normalized runtime input state with metadata
   placeholders: ResolvedPlaceholder[]; // resolution details per placeholder
   resolvedBody: string; // body with all placeholders filled
   unresolvedCount: number; // how many remain unresolved

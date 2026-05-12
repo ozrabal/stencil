@@ -116,6 +116,7 @@ describe('runTemplateService', () => {
 
   it('delivers a no-placeholder template directly to the editor', async () => {
     const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
       placeholders: [],
       resolvedBody: '# Prompt',
       unresolvedCount: 0,
@@ -176,11 +177,31 @@ describe('runTemplateService', () => {
     const resolve = vi
       .fn()
       .mockResolvedValueOnce({
+        inputs: [
+          {
+            description: 'Project name',
+            name: 'project_name',
+            required: true,
+            source: 'unresolved',
+            sources: ['frontmatter'],
+            value: '',
+          },
+        ],
         placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
         resolvedBody: '# Needs input',
         unresolvedCount: 1,
       })
       .mockResolvedValueOnce({
+        inputs: [
+          {
+            description: 'Project name',
+            name: 'project_name',
+            required: true,
+            source: 'explicit',
+            sources: ['frontmatter'],
+            value: 'Stencil',
+          },
+        ],
         placeholders: [{ name: 'project_name', source: 'explicit', value: 'Stencil' }],
         resolvedBody: '# Stencil',
         unresolvedCount: 0,
@@ -194,7 +215,12 @@ describe('runTemplateService', () => {
       templateName: 'needs-input',
     });
     buildPlaceholderPromptPlan.mockReturnValue({
-      initialResolution: { placeholders: [], resolvedBody: '# Needs input', unresolvedCount: 1 },
+      initialResolution: {
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Needs input',
+        unresolvedCount: 1,
+      },
       queue: [{ description: 'Project name', name: 'project_name', required: true }],
     });
     collectPlaceholderInputs.mockResolvedValue({
@@ -210,6 +236,16 @@ describe('runTemplateService', () => {
     });
 
     expect(buildPlaceholderPromptPlan).toHaveBeenCalledWith(template, {
+      inputs: [
+        {
+          description: 'Project name',
+          name: 'project_name',
+          required: true,
+          source: 'unresolved',
+          sources: ['frontmatter'],
+          value: '',
+        },
+      ],
       placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
       resolvedBody: '# Needs input',
       unresolvedCount: 1,
@@ -226,6 +262,94 @@ describe('runTemplateService', () => {
     expect(outcome).toMatchObject({
       kind: 'completed',
       templateName: 'needs-input',
+    });
+  });
+
+  it('runs inline-only templates by prompting from normalized core inputs', async () => {
+    const template = {
+      body: '# Needs input\nProject: {{input:project_name}}',
+      filePath: '/workspace/.stencil/templates/inline-only.md',
+      frontmatter: {
+        description: 'Inline-only input',
+        name: 'inline-only',
+        version: 1,
+      },
+      source: 'project',
+    };
+    const resolve = vi
+      .fn()
+      .mockResolvedValueOnce({
+        inputs: [
+          {
+            description: undefined,
+            name: 'project_name',
+            required: true,
+            source: 'unresolved',
+            sources: ['inline'],
+            value: '',
+          },
+        ],
+        placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
+        resolvedBody: '# Needs input\nProject: {{input:project_name}}',
+        unresolvedCount: 1,
+      })
+      .mockResolvedValueOnce({
+        inputs: [
+          {
+            description: undefined,
+            name: 'project_name',
+            required: true,
+            source: 'explicit',
+            sources: ['inline'],
+            value: 'Stencil',
+          },
+        ],
+        placeholders: [{ name: 'project_name', source: 'explicit', value: 'Stencil' }],
+        resolvedBody: '# Needs input\nProject: Stencil',
+        unresolvedCount: 0,
+      });
+    const stencil = {
+      get: vi.fn().mockResolvedValue(template),
+      resolve,
+    };
+
+    resolveRunTemplateTarget.mockResolvedValue({
+      kind: 'selected',
+      templateName: 'inline-only',
+    });
+    buildPlaceholderPromptPlan.mockReturnValue({
+      initialResolution: {
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Needs input\nProject: {{input:project_name}}',
+        unresolvedCount: 1,
+      },
+      queue: [{ description: 'Project name', name: 'project_name', required: true }],
+    });
+    collectPlaceholderInputs.mockResolvedValue({
+      kind: 'completed',
+      values: { project_name: 'Stencil' },
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(collectPlaceholderInputs).toHaveBeenCalledWith([
+      { description: 'Project name', name: 'project_name', required: true },
+    ]);
+    expect(deliver).toHaveBeenCalledWith({
+      mode: 'default',
+      resolvedBody: '# Needs input\nProject: Stencil',
+      templateName: 'inline-only',
+    });
+    expect(outcome).toMatchObject({
+      kind: 'completed',
+      templateName: 'inline-only',
     });
   });
 
@@ -347,6 +471,16 @@ describe('runTemplateService', () => {
         source: 'project',
       }),
       resolve: vi.fn().mockResolvedValue({
+        inputs: [
+          {
+            description: 'Project name',
+            name: 'project_name',
+            required: true,
+            source: 'unresolved',
+            sources: ['frontmatter'],
+            value: '',
+          },
+        ],
         placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
         resolvedBody: '# Needs input',
         unresolvedCount: 1,
@@ -357,7 +491,12 @@ describe('runTemplateService', () => {
       templateName: 'needs-input',
     });
     buildPlaceholderPromptPlan.mockReturnValue({
-      initialResolution: { placeholders: [], resolvedBody: '# Needs input', unresolvedCount: 1 },
+      initialResolution: {
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Needs input',
+        unresolvedCount: 1,
+      },
       queue: [{ description: 'Project name', name: 'project_name', required: true }],
     });
     collectPlaceholderInputs.mockResolvedValue({ kind: 'cancelled' });
@@ -393,11 +532,31 @@ describe('runTemplateService', () => {
       resolve: vi
         .fn()
         .mockResolvedValueOnce({
+          inputs: [
+            {
+              description: 'Project name',
+              name: 'project_name',
+              required: true,
+              source: 'unresolved',
+              sources: ['frontmatter'],
+              value: '',
+            },
+          ],
           placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
           resolvedBody: '# Needs input',
           unresolvedCount: 1,
         })
         .mockResolvedValueOnce({
+          inputs: [
+            {
+              description: 'Project name',
+              name: 'project_name',
+              required: true,
+              source: 'unresolved',
+              sources: ['frontmatter'],
+              value: '',
+            },
+          ],
           placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
           resolvedBody: '# Needs input',
           unresolvedCount: 1,
@@ -408,7 +567,12 @@ describe('runTemplateService', () => {
       templateName: 'needs-input',
     });
     buildPlaceholderPromptPlan.mockReturnValue({
-      initialResolution: { placeholders: [], resolvedBody: '# Needs input', unresolvedCount: 1 },
+      initialResolution: {
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Needs input',
+        unresolvedCount: 1,
+      },
       queue: [{ description: 'Project name', name: 'project_name', required: true }],
     });
     collectPlaceholderInputs.mockResolvedValue({
@@ -450,6 +614,45 @@ describe('runTemplateService', () => {
       code: 'TEMPLATE_NOT_FOUND',
       message: 'Template "alpha" could not be found.',
     });
+  });
+
+  it('surfaces template contract failures from core without replacing the message', async () => {
+    resolveRunTemplateTarget.mockResolvedValue({
+      kind: 'selected',
+      templateName: 'conflicting-inline-defaults',
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: 'One {{input:review_type:general}} Two {{input:review_type:security}}',
+        filePath: '/workspace/.stencil/templates/conflicting-inline-defaults.md',
+        frontmatter: {
+          description: 'Conflicting inline defaults',
+          name: 'conflicting-inline-defaults',
+          version: 1,
+        },
+        source: 'project',
+      }),
+      resolve: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Template "conflicting-inline-defaults" has validation errors: Input "review_type" has conflicting inline defaults: "general" and "security"',
+          ),
+        ),
+    };
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+
+    await expect(
+      runTemplate({
+        invocationSource: 'command-palette',
+        stencil: stencil as never,
+        workspace: workspace as never,
+      }),
+    ).rejects.toThrow(
+      'Template "conflicting-inline-defaults" has validation errors: Input "review_type" has conflicting inline defaults: "general" and "security"',
+    );
+    expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
   });
 
   it('returns an unsupported outcome for non-editor targets', async () => {

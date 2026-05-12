@@ -79,14 +79,21 @@ Include input validation and unit tests.
 
 ### 4.2 Placeholder
 
-A named variable inside a template, delimited by `{{` and `}}`. Placeholders are declared in the frontmatter with metadata (description, required/optional, default value) and resolved at execution time.
+A named variable inside a template, delimited by `{{` and `}}`. Stencil supports three body forms:
+
+- `{{input:name}}` for a required runtime input
+- `{{input:name:default value}}` for a runtime input with an inline default
+- `{{name}}` as a legacy compatibility form, typically paired with frontmatter metadata
+
+Frontmatter `placeholders` remain supported as metadata overlays and as a legacy declaration format. They supply descriptions, required/optional flags, types, options, and fallback defaults.
 
 **Resolution order (highest priority first):**
 
 1. Explicit user input (passed as arguments or provided interactively)
-2. Environment auto-resolve (built-in context variables)
-3. Default value from frontmatter
-4. Interactive prompt — Claude asks the user
+2. Matching `$ctx.*` value for context variables and legacy placeholder resolution
+3. Inline default value from `{{input:name:default}}`
+4. Frontmatter default value
+5. Interactive prompt or adapter-specific unresolved handling
 
 ### 4.3 Collection
 
@@ -171,11 +178,11 @@ The set of context variables is extensible — plugins and future versions can r
 
 ### 5.5 Validation
 
-| ID   | Requirement                                                                 | Priority |
-| ---- | --------------------------------------------------------------------------- | -------- |
-| VA-1 | Validate template frontmatter on save (required fields, valid YAML)         | P0       |
-| VA-2 | Warn if a template body references placeholders not declared in frontmatter | P0       |
-| VA-3 | Warn if frontmatter declares placeholders not used in the template body     | P1       |
+| ID   | Requirement                                                                                                      | Priority |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | -------- |
+| VA-1 | Validate template frontmatter on save (required fields, valid YAML)                                              | P0       |
+| VA-2 | Warn if a legacy `{{name}}` body token has no matching inline input or frontmatter metadata                      | P0       |
+| VA-3 | Warn if frontmatter declares placeholders not used by either `{{name}}` or `{{input:name}}` in the template body | P1       |
 
 ---
 
@@ -303,7 +310,7 @@ placeholders: # Placeholder declarations (optional)
     options: string[] # Future: allowed values for enum type
 ---
 # Body (Markdown) — the actual prompt
-Free-form text with {{placeholder_name}} and {{$ctx.variable}} references.
+Free-form text with {{input:name}}, {{input:name:default}}, legacy {{placeholder_name}}, and {{$ctx.variable}} references.
 ```
 
 ---

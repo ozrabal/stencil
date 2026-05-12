@@ -1090,6 +1090,76 @@ describe('Stencil.resolve()', () => {
     expect(result.resolvedBody).toBe('Value: {{required_val}}');
   });
 
+  it('tracks inline-only inputs as unresolved runtime inputs', async () => {
+    await stencil.create(makeFrontmatter('inline-only-gap'), 'Value: {{input:project_name}}');
+
+    const result = await stencil.resolve('inline-only-gap', {});
+
+    expect(result.unresolvedCount).toBe(1);
+    expect(result.placeholders).toEqual([
+      { name: 'project_name', source: 'unresolved', value: '' },
+    ]);
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: undefined,
+        description: undefined,
+        name: 'project_name',
+        required: true,
+        source: 'unresolved',
+        sources: ['inline'],
+        value: '',
+      },
+    ]);
+    expect(result.resolvedBody).toBe('Value: {{input:project_name}}');
+  });
+
+  it('resolves inline defaults without frontmatter declarations', async () => {
+    await stencil.create(
+      makeFrontmatter('inline-default'),
+      'Review: {{input:review_type:general}}',
+    );
+
+    const result = await stencil.resolve('inline-default', {});
+
+    expect(result.unresolvedCount).toBe(0);
+    expect(result.resolvedBody).toBe('Review: general');
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: 'general',
+        description: undefined,
+        name: 'review_type',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'general',
+      },
+    ]);
+  });
+
+  it('merges frontmatter metadata onto inline inputs during resolution', async () => {
+    await stencil.create(
+      makeFrontmatter('inline-overlay', {
+        placeholders: [{ description: 'Project name', name: 'project_name', required: true }],
+      }),
+      'Project: {{input:project_name}}',
+    );
+
+    const result = await stencil.resolve('inline-overlay', { project_name: 'Stencil' });
+
+    expect(result.resolvedBody).toBe('Project: Stencil');
+    expect(result.inputs).toEqual([
+      {
+        defaultValue: undefined,
+        description: 'Project name',
+        name: 'project_name',
+        required: true,
+        source: 'explicit',
+        sources: ['inline', 'frontmatter'],
+        value: 'Stencil',
+      },
+    ]);
+  });
+
   it('throws when template does not exist', async () => {
     await expect(stencil.resolve('nonexistent', {})).rejects.toSatisfy((error: unknown) => {
       expect(error).toBeInstanceOf(TemplateNotFoundError);
