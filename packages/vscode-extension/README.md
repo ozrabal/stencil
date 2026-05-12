@@ -12,6 +12,45 @@ VS Code adapter for the shipped Stencil MVP. This package keeps template logic i
 
 The extension does not require terminal setup for normal MVP use. `Create Template` bootstraps `.stencil/` on first use when needed.
 
+## Context Resolution
+
+`Stencil: Run Template` resolves `$ctx.*` through `@stencil-pm/core` plus one VS Code adapter provider.
+
+Core-owned keys stay in `@stencil-pm/core` because they do not depend on live VS Code state:
+
+- `date`
+- `os`
+- `cwd`
+- `current_branch`
+- `git_user`
+- `project_name`
+- `language`
+
+VS Code-owned keys come from the extension because they depend on the active editor, workspace, or diagnostics APIs:
+
+- existing keys: `active_file`, `active_selection`, `workspace_folders`, `active_language_id`, `diagnostics_count`
+- Epic 2 expansion: `active_file_name`, `active_file_relative_path`, `active_workspace_folder`, `workspace_folder_count`, `active_selection_start_line`, `active_selection_end_line`, `active_selection_line_count`, `diagnostics_error_count`, `diagnostics_warning_count`
+
+Contract rules:
+
+- all values are strings
+- missing VS Code state is omitted rather than emitted as an empty string
+- existing key names remain stable; Epic 2 adds keys instead of renaming current ones
+- `workspace_folders` remains newline-separated for compatibility
+- when active editor context is missing, templates still run and unresolved `$ctx.*` tokens stay unchanged in the delivered output
+
+Example:
+
+```md
+Current file: {{$ctx.active_file}}
+File name: {{$ctx.active_file_name}}
+Relative file: {{$ctx.active_file_relative_path}}
+Workspace: {{$ctx.active_workspace_folder}}
+Workspace count: {{$ctx.workspace_folder_count}}
+Selection lines: {{$ctx.active_selection_start_line}}-{{$ctx.active_selection_end_line}} ({{$ctx.active_selection_line_count}})
+Diagnostics: {{$ctx.diagnostics_count}} total, {{$ctx.diagnostics_error_count}} errors, {{$ctx.diagnostics_warning_count}} warnings
+```
+
 ## Command Behavior
 
 `Stencil: Run Template` resolves its target in this order:

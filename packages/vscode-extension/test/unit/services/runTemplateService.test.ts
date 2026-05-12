@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('runTemplateService', () => {
@@ -6,7 +10,29 @@ describe('runTemplateService', () => {
   const resolveRunTemplateTarget = vi.fn();
   const getDeliveryTargetCapability = vi.fn();
   const deliver = vi.fn();
+  const getDiagnostics = vi.fn();
   const showInformationMessage = vi.fn();
+  const vscodeWindow = {
+    activeTextEditor: {
+      document: {
+        getText: vi.fn().mockReturnValue('selected text'),
+        languageId: 'typescript',
+        uri: {
+          fsPath: '/workspace/src/file.ts',
+          scheme: 'file',
+        },
+      },
+      selection: {
+        end: { line: 1 },
+        isEmpty: false,
+        start: { line: 1 },
+      },
+    },
+    showInformationMessage,
+  };
+  const vscodeWorkspace = {
+    workspaceFolders: [{ uri: { fsPath: '/workspace' } }],
+  };
 
   const workspace = {
     kind: 'workspace' as const,
@@ -26,6 +52,7 @@ describe('runTemplateService', () => {
     resolveRunTemplateTarget.mockReset();
     getDeliveryTargetCapability.mockReset();
     deliver.mockReset();
+    getDiagnostics.mockReset();
     showInformationMessage.mockReset();
 
     getDeliveryTargetCapability.mockReturnValue({
@@ -35,16 +62,35 @@ describe('runTemplateService', () => {
       target: 'editor',
       unavailableReason: 'editor unavailable',
     });
+    getDiagnostics.mockReturnValue([]);
     deliver.mockResolvedValue({
       deliveryTarget: 'editor',
       deliveryTargetLabel: 'new editor',
       documentUri: { scheme: 'untitled' },
     });
+    vscodeWindow.activeTextEditor = {
+      document: {
+        getText: vi.fn().mockReturnValue('selected text'),
+        languageId: 'typescript',
+        uri: {
+          fsPath: '/workspace/src/file.ts',
+          scheme: 'file',
+        },
+      },
+      selection: {
+        end: { line: 1 },
+        isEmpty: false,
+        start: { line: 1 },
+      },
+    };
+    vscodeWorkspace.workspaceFolders = [{ uri: { fsPath: '/workspace' } }];
 
     vi.doMock('vscode', () => ({
-      window: {
-        showInformationMessage,
+      languages: {
+        getDiagnostics,
       },
+      window: vscodeWindow,
+      workspace: vscodeWorkspace,
     }));
 
     vi.doMock('../../../src/services/placeholderInput.js', () => ({
@@ -180,6 +226,110 @@ describe('runTemplateService', () => {
     expect(outcome).toMatchObject({
       kind: 'completed',
       templateName: 'needs-input',
+    });
+  });
+
+  it('delivers templates with expanded VS Code context resolved through the real stencil facade', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'stencil-vscode-run-template-'));
+    await mkdir(join(workspaceRoot, '.stencil', 'templates'), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, '.stencil', 'templates', 'context-check.md'),
+      [
+        '---',
+        'name: context-check',
+        'description: Verify VS Code context resolution',
+        'version: 1',
+        '---',
+        'File: {{$ctx.active_file_name}}',
+        'Relative: {{$ctx.active_file_relative_path}}',
+        'Workspace: {{$ctx.active_workspace_folder}}',
+        'Selection: {{$ctx.active_selection_start_line}}-{{$ctx.active_selection_end_line}}/{{$ctx.active_selection_line_count}}',
+      ].join('\n'),
+    );
+
+    const { Stencil } = await import('../../../src/core/index.js');
+    const { VSCodeContextProvider } = await import('../../../src/providers/contextResolver.js');
+    const stencil = new Stencil({
+      contextProviders: [new VSCodeContextProvider()],
+      projectDir: workspaceRoot,
+    });
+
+    resolveRunTemplateTarget.mockResolvedValue({
+      kind: 'selected',
+      templateName: 'context-check',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
+    expect(deliver).toHaveBeenCalledWith({
+      mode: 'default',
+      resolvedBody: [
+        'File: file.ts',
+        'Relative: src/file.ts',
+        'Workspace: /workspace',
+        'Selection: 2-2/1',
+      ].join('\n'),
+      templateName: 'context-check',
+    });
+    expect(outcome).toMatchObject({
+      kind: 'completed',
+      templateName: 'context-check',
+    });
+  });
+
+  it('keeps run execution non-blocking when active editor context is missing', async () => {
+    vscodeWindow.activeTextEditor = undefined as never;
+
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'stencil-vscode-run-template-'));
+    await mkdir(join(workspaceRoot, '.stencil', 'templates'), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, '.stencil', 'templates', 'context-fallback.md'),
+      [
+        '---',
+        'name: context-fallback',
+        'description: Verify missing context fallback',
+        'version: 1',
+        '---',
+        'File: {{$ctx.active_file}}',
+        'Workspace count: {{$ctx.workspace_folder_count}}',
+      ].join('\n'),
+    );
+
+    const { Stencil } = await import('../../../src/core/index.js');
+    const { VSCodeContextProvider } = await import('../../../src/providers/contextResolver.js');
+    const stencil = new Stencil({
+      contextProviders: [new VSCodeContextProvider()],
+      projectDir: workspaceRoot,
+    });
+
+    resolveRunTemplateTarget.mockResolvedValue({
+      kind: 'selected',
+      templateName: 'context-fallback',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
+    expect(collectPlaceholderInputs).not.toHaveBeenCalled();
+    expect(deliver).toHaveBeenCalledWith({
+      mode: 'default',
+      resolvedBody: ['File: {{$ctx.active_file}}', 'Workspace count: 1'].join('\n'),
+      templateName: 'context-fallback',
+    });
+    expect(outcome).toMatchObject({
+      kind: 'completed',
+      templateName: 'context-fallback',
     });
   });
 
