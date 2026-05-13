@@ -1,6 +1,6 @@
 # VS Code Extension Manual Acceptance
 
-Use this checklist in an Extension Development Host for the Epic 1 MVP.
+Use this checklist in an Extension Development Host for the current MVP plus Epic 4 Copilot Chat delivery.
 
 ## Checklist
 
@@ -36,6 +36,25 @@ Use this checklist in an Extension Development Host for the Epic 1 MVP.
     Expected result: the file resolves to the `stencil-template` language and placeholder-aware syntax highlighting is visible.
 16. Confirm the full flow does not depend on any extra UI surface.
     Expected result: no Webview, preview panel, CodeLens, diagnostics UI, autocomplete UI, or Claude Code extension dependency is required.
+
+## Copilot Chat Checklist
+
+1. Run `Stencil: Run Template in Copilot Chat` for a template satisfied by defaults and `$ctx.*`.
+   Expected result: Copilot Chat opens with the resolved prompt inserted and not submitted.
+2. Run `Stencil: Run Template in Copilot Chat (Send)` for the same template.
+   Expected result: Copilot Chat receives the resolved prompt immediately without leaving it as a draft.
+3. Run `Stencil: Run Template in Copilot Chat (Select Mode)` on a VS Code runtime that supports chat modes.
+   Expected result: Stencil offers `Ask`, `Edit`, and `Agent`, and the chosen mode is passed through to Copilot Chat.
+4. Run `Stencil: Run Template in Copilot Chat (Select Mode)` on a runtime that only supports `ask`.
+   Expected result: only `Ask` is offered, or the command resolves directly to `ask` without a misleading unavailable option.
+5. Repeat a Copilot Chat run with a template that requires placeholder input.
+   Expected result: all placeholder prompts complete before Copilot Chat opens, and the final resolved prompt is what gets inserted or sent.
+6. Run a Copilot Chat command in an environment where Copilot Chat is unavailable.
+   Expected result: the resolved prompt opens in a new untitled Markdown editor and the information message explains the fallback.
+7. Simulate or observe a Copilot handoff failure after resolution.
+   Expected result: the resolved prompt still opens in a new editor and the message explains that Copilot failed and editor fallback was used.
+8. Cancel placeholder input during a Copilot-targeted run.
+   Expected result: no Copilot Chat handoff happens and no fallback editor opens.
 
 ## Suggested Validation Commands
 

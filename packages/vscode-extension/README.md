@@ -5,6 +5,9 @@ VS Code adapter for the shipped Stencil MVP. This package keeps template logic i
 ## MVP Surface
 
 - `Stencil: Run Template`
+- `Stencil: Run Template in Copilot Chat`
+- `Stencil: Run Template in Copilot Chat (Send)`
+- `Stencil: Run Template in Copilot Chat (Select Mode)`
 - `Stencil: Create Template`
 - `Stencil: List Templates`
 - `Stencil Templates` Explorer view for browsing collections and templates
@@ -61,6 +64,14 @@ Diagnostics: {{$ctx.diagnostics_count}} total, {{$ctx.diagnostics_error_count}} 
 
 If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt opens immediately in a new untitled Markdown editor. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without opening partial output.
 
+Copilot Chat delivery is available through three explicit commands:
+
+- `Stencil: Run Template in Copilot Chat` inserts the resolved prompt without submitting it.
+- `Stencil: Run Template in Copilot Chat (Send)` sends the resolved prompt immediately.
+- `Stencil: Run Template in Copilot Chat (Select Mode)` inserts into the supported Copilot sub-mode (`ask`, `edit`, or `agent`) for the current runtime.
+
+If Copilot Chat is unavailable or the handoff fails, Stencil falls back to the existing editor delivery path and explains what happened.
+
 ## Template Input Syntax
 
 `Stencil: Run Template` prompts from the normalized input contract returned by `@stencil-pm/core`.
@@ -94,11 +105,13 @@ The run flow is split into explicit seams:
 - delivery adapters in [`src/services/delivery/`](./src/services/delivery/)
 - capability checks in [`src/services/delivery/capabilities.ts`](./src/services/delivery/capabilities.ts)
 
-The current supported state after Epic 1 is intentionally narrow:
+The current supported state after Epic 4 is:
 
 - `editor` delivery with `default` mode is supported end to end
-- `copilot-chat`, `clipboard`, and `lm-api` targets have typed contracts and capability probes, but no delivery implementation yet
-- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, and unavailable modes are normalized as typed run outcomes before messaging
+- `copilot-chat` delivery supports `insert` and `send`
+- Copilot chat modes are runtime-gated: `ask` is always supported, `edit` and `agent` require VS Code `1.100+`
+- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, unavailable chat modes, and Copilot fallback are normalized as typed run outcomes before messaging
+- `clipboard` and `lm-api` remain reserved in the contract but are not implemented yet
 
 Current entrypoints all converge on the same request shape:
 
@@ -106,9 +119,16 @@ Current entrypoints all converge on the same request shape:
 - tree item runs from the `Stencil Templates` Explorer view
 - active-editor auto-target resolution when no explicit template is supplied
 
+## Copilot Chat Notes
+
+- Minimum VS Code engine and typings baseline: `^1.100.0`
+- Copilot availability is probed at runtime via `workbench.action.chat.open`
+- When the runtime only supports `ask`, the mode-selection command offers only `ask`
+- When Copilot Chat is unavailable or command execution throws, Stencil opens the resolved prompt in a new editor instead of discarding the run
+
 ## Next Integration Points
 
-- Epic 4 should add Copilot Chat delivery by implementing a delivery adapter and capability policy for `copilot-chat`.
+- Epic 5 should rationalize command contributions, defaults, and mode-selection UX.
 - Epic 6 should own automatic fallback priority between future targets rather than reintroducing branching in command handlers.
 - Epic 7 should add LM API execution and streaming UI behind the existing run options and delivery capability contracts.
 
@@ -128,7 +148,8 @@ Current entrypoints all converge on the same request shape:
 - Activation stays narrow: commands, the tree view, and `.stencil/**/*.md` file detection wake the extension only when relevant.
 - Placeholder collection stays on Input Boxes only for MVP, which avoids Webview startup and preview synchronization overhead.
 - Run target resolution lists templates only when no explicit target or active template match exists, which avoids unnecessary Quick Pick setup and keeps the happy path cheap.
-- Delivery capability probing is side-effect free and short-circuits unsupported targets before any template loading or placeholder prompting work happens.
+- Delivery capability probing is side-effect free and caches the VS Code command list so Copilot checks stay cheap across repeated runs.
+- Template resolution happens once per run and the resolved body is reused for editor fallback instead of recomputing it after a Copilot failure.
 
 ## Verification
 

@@ -14,13 +14,29 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
     menus?: Record<string, Array<Record<string, unknown>>>;
     views?: Record<string, Array<Record<string, unknown>>>;
   };
+  devDependencies?: Record<string, string>;
+  engines?: Record<string, string>;
 };
 
 describe('package contributions', () => {
+  it('targets the Copilot chat-mode compatible VS Code baseline', () => {
+    expect(packageJson).toMatchObject({
+      devDependencies: {
+        '@types/vscode': '^1.100.0',
+      },
+      engines: {
+        vscode: '^1.100.0',
+      },
+    });
+  });
+
   it('contributes only the supported Epic 1 command surface', () => {
     expect(packageJson.activationEvents).toEqual([
       'onCommand:stencil.openTemplate',
       'onCommand:stencil.runTemplate',
+      'onCommand:stencil.runTemplateInCopilotChat',
+      'onCommand:stencil.runTemplateInCopilotChatSend',
+      'onCommand:stencil.runTemplateInCopilotChatWithMode',
       'onCommand:stencil.createTemplate',
       'onCommand:stencil.listTemplates',
       'onCommand:stencil.refreshTemplatesView',
@@ -31,6 +47,18 @@ describe('package contributions', () => {
     expect(packageJson.contributes?.commands).toEqual([
       { command: 'stencil.openTemplate', title: 'Stencil: Open Template' },
       { command: 'stencil.runTemplate', title: 'Stencil: Run Template' },
+      {
+        command: 'stencil.runTemplateInCopilotChat',
+        title: 'Stencil: Run Template in Copilot Chat',
+      },
+      {
+        command: 'stencil.runTemplateInCopilotChatSend',
+        title: 'Stencil: Run Template in Copilot Chat (Send)',
+      },
+      {
+        command: 'stencil.runTemplateInCopilotChatWithMode',
+        title: 'Stencil: Run Template in Copilot Chat (Select Mode)',
+      },
       { command: 'stencil.createTemplate', title: 'Stencil: Create Template' },
       { command: 'stencil.listTemplates', title: 'Stencil: List Templates' },
       {

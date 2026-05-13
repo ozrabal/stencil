@@ -8,6 +8,7 @@ export async function openResolvedTemplateOutput(
   resolvedBody: string,
 ): Promise<OutputDeliveryResult> {
   return editorDeliveryAdapter.deliver({
+    chatMode: 'ask',
     mode: 'default',
     resolvedBody,
     templateName: 'resolved-output',

@@ -34,4 +34,13 @@ describe('showCommandError', () => {
 
     expect(showErrorMessage).toHaveBeenCalledWith('Stencil failed unexpectedly: boom');
   });
+
+  it('exposes helper utilities for extracting user-facing error messages', async () => {
+    const { getUnknownErrorMessage, getUserFacingErrorMessage } =
+      await import('../../../src/services/errors.js');
+
+    expect(getUnknownErrorMessage(new Error('boom'))).toBe('boom');
+    expect(getUnknownErrorMessage('boom')).toBe('Unknown error');
+    expect(getUserFacingErrorMessage(new Error('boom'))).toBe('Stencil failed unexpectedly: boom');
+  });
 });

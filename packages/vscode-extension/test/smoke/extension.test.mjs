@@ -7,6 +7,9 @@ const EXTENSION_ID = 'stencil-pm.stencil-vscode';
 const CONTRIBUTED_COMMANDS = [
   'stencil.openTemplate',
   'stencil.runTemplate',
+  'stencil.runTemplateInCopilotChat',
+  'stencil.runTemplateInCopilotChatSend',
+  'stencil.runTemplateInCopilotChatWithMode',
   'stencil.createTemplate',
   'stencil.listTemplates',
   'stencil.refreshTemplatesView',

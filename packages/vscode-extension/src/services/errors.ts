@@ -27,11 +27,17 @@ const ERROR_MESSAGES: Record<StencilErrorCode, string> = {
 };
 
 export async function showCommandError(error: unknown): Promise<void> {
+  await vscode.window.showErrorMessage(getUserFacingErrorMessage(error));
+}
+
+export function getUserFacingErrorMessage(error: unknown): string {
   if (error instanceof StencilError) {
-    await vscode.window.showErrorMessage(ERROR_MESSAGES[error.code] ?? error.message);
-    return;
+    return ERROR_MESSAGES[error.code] ?? error.message;
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  await vscode.window.showErrorMessage(`Stencil failed unexpectedly: ${message}`);
+  return `Stencil failed unexpectedly: ${getUnknownErrorMessage(error)}`;
+}
+
+export function getUnknownErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }

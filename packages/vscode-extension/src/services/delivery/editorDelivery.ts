@@ -12,6 +12,7 @@ export const editorDeliveryAdapter: RunTemplateDeliveryAdapter = {
     await vscode.window.showTextDocument(document);
 
     return {
+      deliveryActionLabel: 'opened',
       deliveryTarget: 'editor',
       deliveryTargetLabel: 'new editor',
       documentUri: document.uri,

@@ -1,14 +1,20 @@
 import type * as vscode from 'vscode';
 
-import type { RunTemplateDeliveryTarget, RunTemplateMode } from '../runOptions.js';
+import type {
+  RunTemplateChatMode,
+  RunTemplateDeliveryTarget,
+  RunTemplateMode,
+} from '../runOptions.js';
 
 export interface RunTemplateDeliveryRequest {
+  chatMode: RunTemplateChatMode;
   mode: RunTemplateMode;
   resolvedBody: string;
   templateName: string;
 }
 
 export interface RunTemplateDeliveryResult {
+  deliveryActionLabel: string;
   deliveryTarget: RunTemplateDeliveryTarget;
   deliveryTargetLabel: string;
   documentUri?: vscode.Uri;

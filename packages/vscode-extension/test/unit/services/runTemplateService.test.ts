@@ -9,8 +9,10 @@ describe('runTemplateService', () => {
   const collectPlaceholderInputs = vi.fn();
   const resolveRunTemplateTarget = vi.fn();
   const getDeliveryTargetCapability = vi.fn();
+  const copilotDeliver = vi.fn();
   const deliver = vi.fn();
   const getDiagnostics = vi.fn();
+  const showErrorMessage = vi.fn();
   const showInformationMessage = vi.fn();
   const vscodeWindow = {
     activeTextEditor: {
@@ -28,6 +30,7 @@ describe('runTemplateService', () => {
         start: { line: 1 },
       },
     },
+    showErrorMessage,
     showInformationMessage,
   };
   const vscodeWorkspace = {
@@ -51,8 +54,10 @@ describe('runTemplateService', () => {
     collectPlaceholderInputs.mockReset();
     resolveRunTemplateTarget.mockReset();
     getDeliveryTargetCapability.mockReset();
+    copilotDeliver.mockReset();
     deliver.mockReset();
     getDiagnostics.mockReset();
+    showErrorMessage.mockReset();
     showInformationMessage.mockReset();
 
     getDeliveryTargetCapability.mockReturnValue({
@@ -64,6 +69,7 @@ describe('runTemplateService', () => {
     });
     getDiagnostics.mockReturnValue([]);
     deliver.mockResolvedValue({
+      deliveryActionLabel: 'opened',
       deliveryTarget: 'editor',
       deliveryTargetLabel: 'new editor',
       documentUri: { scheme: 'untitled' },
@@ -112,6 +118,13 @@ describe('runTemplateService', () => {
         target: 'editor',
       },
     }));
+
+    vi.doMock('../../../src/services/delivery/copilotChatDelivery.js', () => ({
+      copilotChatDeliveryAdapter: {
+        deliver: copilotDeliver,
+        target: 'copilot-chat',
+      },
+    }));
   });
 
   it('delivers a no-placeholder template directly to the editor', async () => {
@@ -147,12 +160,14 @@ describe('runTemplateService', () => {
     expect(resolve).toHaveBeenCalledWith('alpha', {});
     expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
     expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Prompt',
       templateName: 'alpha',
     });
     expect(outcome).toEqual({
       delivery: {
+        deliveryActionLabel: 'opened',
         deliveryTarget: 'editor',
         deliveryTargetLabel: 'new editor',
         documentUri: { scheme: 'untitled' },
@@ -255,6 +270,7 @@ describe('runTemplateService', () => {
     ]);
     expect(resolve).toHaveBeenNthCalledWith(2, 'needs-input', { project_name: 'Stencil' });
     expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Stencil',
       templateName: 'needs-input',
@@ -343,6 +359,7 @@ describe('runTemplateService', () => {
       { description: 'Project name', name: 'project_name', required: true },
     ]);
     expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Needs input\nProject: Stencil',
       templateName: 'inline-only',
@@ -392,6 +409,7 @@ describe('runTemplateService', () => {
 
     expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
     expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
       mode: 'default',
       resolvedBody: [
         'File: file.ts',
@@ -447,6 +465,7 @@ describe('runTemplateService', () => {
     expect(buildPlaceholderPromptPlan).not.toHaveBeenCalled();
     expect(collectPlaceholderInputs).not.toHaveBeenCalled();
     expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
       mode: 'default',
       resolvedBody: ['File: {{$ctx.active_file}}', 'Workspace count: 1'].join('\n'),
       templateName: 'context-fallback',
@@ -508,6 +527,76 @@ describe('runTemplateService', () => {
       workspace: workspace as never,
     });
 
+    expect(deliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      kind: 'cancelled',
+      stage: 'placeholder-input',
+      templateName: 'needs-input',
+    });
+  });
+
+  it('does not attempt Copilot delivery or editor fallback after placeholder cancellation', async () => {
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Needs input',
+        filePath: '/workspace/.stencil/templates/needs-input.md',
+        frontmatter: {
+          description: 'Needs manual input',
+          name: 'needs-input',
+          placeholders: [{ description: 'Project name', name: 'project_name', required: true }],
+          version: 1,
+        },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [
+          {
+            description: 'Project name',
+            name: 'project_name',
+            required: true,
+            source: 'unresolved',
+            sources: ['frontmatter'],
+            value: '',
+          },
+        ],
+        placeholders: [{ name: 'project_name', source: 'unresolved', value: '' }],
+        resolvedBody: '# Needs input',
+        unresolvedCount: 1,
+      }),
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: false,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+      unavailableReason:
+        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({
+      kind: 'selected',
+      templateName: 'needs-input',
+    });
+    buildPlaceholderPromptPlan.mockReturnValue({
+      initialResolution: {
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Needs input',
+        unresolvedCount: 1,
+      },
+      queue: [{ description: 'Project name', name: 'project_name', required: true }],
+    });
+    collectPlaceholderInputs.mockResolvedValue({ kind: 'cancelled' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(copilotDeliver).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
     expect(outcome).toEqual({
       kind: 'cancelled',
@@ -680,6 +769,161 @@ describe('runTemplateService', () => {
     expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
   });
 
+  it('keeps the editor path unaffected by Copilot capability stubs', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockImplementation((target: string) =>
+      target === 'editor'
+        ? {
+            available: true,
+            implemented: true,
+            supportedModes: ['default'],
+            target: 'editor',
+          }
+        : {
+            available: false,
+            implemented: false,
+            supportedModes: ['default', 'send'],
+            target: 'copilot-chat',
+            unavailableReason: 'not available',
+          },
+    );
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'default',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(outcome).toMatchObject({
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+  });
+
+  it('delivers directly to Copilot Chat for the insert flow', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert'],
+      target: 'copilot-chat',
+    });
+    copilotDeliver.mockResolvedValue({
+      deliveryActionLabel: 'inserted',
+      deliveryTarget: 'copilot-chat',
+      deliveryTargetLabel: 'Copilot Chat',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(copilotDeliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'insert',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'inserted',
+        deliveryTarget: 'copilot-chat',
+        deliveryTargetLabel: 'Copilot Chat',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+  });
+
+  it('passes through an explicitly supported Copilot chat mode', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+    });
+    copilotDeliver.mockResolvedValue({
+      deliveryActionLabel: 'inserted',
+      deliveryTarget: 'copilot-chat',
+      deliveryTargetLabel: 'Copilot Chat',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    await runTemplate({
+      invocationSource: 'command-palette',
+      options: { chatMode: 'agent', deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(copilotDeliver).toHaveBeenCalledWith({
+      chatMode: 'agent',
+      mode: 'insert',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+  });
+
   it('returns a mode-unavailable outcome for invalid editor mode combinations', async () => {
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -696,6 +940,116 @@ describe('runTemplateService', () => {
       supportedModes: ['default'],
     });
     expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the editor when the requested Copilot chat mode is unsupported', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { chatMode: 'agent', deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+        documentUri: { scheme: 'untitled' },
+      },
+      fallbackReason:
+        'Copilot Chat mode "agent" is unavailable in the current runtime. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+    expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'default',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(copilotDeliver).not.toHaveBeenCalled();
+  });
+
+  it('delivers directly to Copilot Chat for the send flow', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+    });
+    copilotDeliver.mockResolvedValue({
+      deliveryActionLabel: 'sent',
+      deliveryTarget: 'copilot-chat',
+      deliveryTargetLabel: 'Copilot Chat',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'send' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(copilotDeliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'send',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'sent',
+        deliveryTarget: 'copilot-chat',
+        deliveryTargetLabel: 'Copilot Chat',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
   });
 
   it('returns a target-unavailable outcome when a supported target cannot run here', async () => {
@@ -721,6 +1075,118 @@ describe('runTemplateService', () => {
       reason: 'editor unavailable',
     });
     expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the editor when Copilot Chat is unavailable', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: false,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+      unavailableReason:
+        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+        documentUri: { scheme: 'untitled' },
+      },
+      fallbackReason:
+        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+    expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'default',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(copilotDeliver).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the editor when Copilot command execution throws', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask', 'edit', 'agent'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+    });
+    copilotDeliver.mockRejectedValue(new Error('chat open failed'));
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+        documentUri: { scheme: 'untitled' },
+      },
+      fallbackReason:
+        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+    expect(deliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'default',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
   });
 
   it('maps recoverable outcomes to informational messages', async () => {
@@ -750,5 +1216,127 @@ describe('runTemplateService', () => {
       2,
       'No Stencil templates were found in this workspace.',
     );
+  });
+
+  it('maps unsupported and unavailable delivery outcomes to informational messages', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      deliveryTarget: 'copilot-chat',
+      kind: 'unsupported-target',
+      mode: 'default',
+    });
+    await showRunTemplateOutcomeMessage({
+      deliveryTarget: 'copilot-chat',
+      kind: 'mode-unavailable',
+      mode: 'send',
+      supportedModes: ['default'],
+    });
+    await showRunTemplateOutcomeMessage({
+      deliveryTarget: 'copilot-chat',
+      kind: 'target-unavailable',
+      mode: 'default',
+      reason: 'Copilot Chat delivery is not available in this extension build.',
+    });
+
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      1,
+      'Stencil run target "copilot-chat" is not supported yet.',
+    );
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      2,
+      'Stencil run mode "send" is unavailable for target "copilot-chat". Supported modes: default.',
+    );
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      3,
+      'Copilot Chat delivery is not available in this extension build.',
+    );
+  });
+
+  it('maps unsupported chat-mode outcomes to informational messages', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      chatMode: 'agent',
+      deliveryTarget: 'copilot-chat',
+      kind: 'chat-mode-unavailable',
+      supportedChatModes: ['ask'],
+    });
+
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      'Stencil chat mode "agent" is unavailable for target "copilot-chat". Supported chat modes: ask.',
+    );
+  });
+
+  it('maps fallback outcomes to informational messages', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+      },
+      fallbackReason:
+        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+    );
+  });
+
+  it('reports inserted and sent Copilot deliveries distinctly in outcome messages', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      delivery: {
+        deliveryActionLabel: 'inserted',
+        deliveryTarget: 'copilot-chat',
+        deliveryTargetLabel: 'Copilot Chat',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+    await showRunTemplateOutcomeMessage({
+      delivery: {
+        deliveryActionLabel: 'sent',
+        deliveryTarget: 'copilot-chat',
+        deliveryTargetLabel: 'Copilot Chat',
+      },
+      kind: 'completed',
+      templateName: 'beta',
+    });
+
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      1,
+      'Ran "alpha". Inserted resolved prompt in Copilot Chat.',
+    );
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      2,
+      'Ran "beta". Sent resolved prompt in Copilot Chat.',
+    );
+  });
+
+  it('routes delivery-failed outcomes to error notifications', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      deliveryTarget: 'copilot-chat',
+      kind: 'delivery-failed',
+      reason: 'Editor fallback also failed.',
+      templateName: 'alpha',
+    });
+
+    expect(showErrorMessage).toHaveBeenCalledWith('Editor fallback also failed.');
+    expect(showInformationMessage).not.toHaveBeenCalled();
   });
 });
