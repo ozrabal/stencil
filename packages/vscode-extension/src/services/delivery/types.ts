@@ -10,6 +10,7 @@ export interface RunTemplateDeliveryRequest {
   chatMode: RunTemplateChatMode;
   mode: RunTemplateMode;
   resolvedBody: string;
+  selectedModelId?: string;
   templateName: string;
 }
 
@@ -18,6 +19,8 @@ export interface RunTemplateDeliveryResult {
   deliveryTarget: RunTemplateDeliveryTarget;
   deliveryTargetLabel: string;
   documentUri?: vscode.Uri;
+  panelTitle?: string;
+  surfaceLabel?: string;
 }
 
 export interface RunTemplateDeliveryAdapter {

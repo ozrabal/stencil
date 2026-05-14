@@ -6,8 +6,10 @@ import { registerOpenTemplateCommand } from './commands/openTemplate.js';
 import {
   registerRunTemplateCommand,
   registerRunTemplateInCopilotChatWithModeCommand,
+  registerRunTemplateWithLanguageModelSelectModelCommand,
   RUN_TEMPLATE_IN_COPILOT_CHAT_COMMAND_ID,
   RUN_TEMPLATE_IN_COPILOT_CHAT_SEND_COMMAND_ID,
+  RUN_TEMPLATE_WITH_LANGUAGE_MODEL_COMMAND_ID,
 } from './commands/runTemplate.js';
 import {
   registerRefreshTemplatesViewCommand,
@@ -29,6 +31,10 @@ export function activate(context: vscode.ExtensionContext): void {
       deliveryTarget: 'copilot-chat',
       mode: 'send',
     }),
+    registerRunTemplateCommand(RUN_TEMPLATE_WITH_LANGUAGE_MODEL_COMMAND_ID, {
+      deliveryTarget: 'lm-api',
+    }),
+    registerRunTemplateWithLanguageModelSelectModelCommand(),
     registerRunTemplateInCopilotChatWithModeCommand(),
     registerCreateTemplateCommand(templateTreeProvider),
     registerListTemplatesCommand(),

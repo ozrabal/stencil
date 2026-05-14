@@ -6,6 +6,11 @@ import { StencilError, StencilErrorCode } from '../core/index.js';
 import { getDeliveryTargetCapability } from './delivery/capabilities.js';
 import { copilotChatDeliveryAdapter } from './delivery/copilotChatDelivery.js';
 import { editorDeliveryAdapter } from './delivery/editorDelivery.js';
+import {
+  lmApiDeliveryAdapter,
+  LmApiDeliveryCancelledError,
+  LmApiDeliveryError,
+} from './delivery/lmApiDelivery.js';
 import { getUnknownErrorMessage } from './errors.js';
 import { buildPlaceholderPromptPlan, collectPlaceholderInputs } from './placeholderInput.js';
 import {
@@ -59,7 +64,7 @@ export interface RunTemplateChatModeUnavailableOutcome {
 
 export interface RunTemplateCancelledOutcome {
   kind: 'cancelled';
-  stage: 'placeholder-input';
+  stage: 'lm-api-execution' | 'placeholder-input';
   templateName: string;
 }
 
@@ -187,17 +192,31 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
         chatMode: options.chatMode,
         mode: options.mode,
         resolvedBody: resolvedTemplate.resolvedBody,
+        ...(request.selectedLanguageModelId !== undefined
+          ? { selectedModelId: request.selectedLanguageModelId }
+          : {}),
         templateName,
       }),
       kind: 'completed',
       templateName,
     };
   } catch (error) {
+    if (error instanceof LmApiDeliveryCancelledError) {
+      return {
+        kind: 'cancelled',
+        stage: 'lm-api-execution',
+        templateName,
+      };
+    }
+
     if (options.deliveryTarget !== 'copilot-chat') {
       return {
         deliveryTarget: options.deliveryTarget,
         kind: 'delivery-failed',
-        reason: `Stencil could not deliver template "${templateName}": ${getUnknownErrorMessage(error)}`,
+        reason:
+          error instanceof LmApiDeliveryError
+            ? error.userMessage
+            : `Stencil could not deliver template "${templateName}": ${getUnknownErrorMessage(error)}`,
         templateName,
       };
     }
@@ -228,7 +247,9 @@ export async function showRunTemplateOutcomeMessage(outcome: RunTemplateOutcome)
 function getRunTemplateOutcomeMessage(outcome: RunTemplateOutcome): string | undefined {
   switch (outcome.kind) {
     case 'cancelled':
-      return `Cancelled running template "${outcome.templateName}".`;
+      return outcome.stage === 'lm-api-execution'
+        ? `Cancelled language model execution for template "${outcome.templateName}".`
+        : `Cancelled running template "${outcome.templateName}".`;
     case 'chat-mode-unavailable':
       return `Stencil chat mode "${outcome.chatMode}" is unavailable for target "${formatDeliveryTargetLabel(outcome.deliveryTarget)}". Supported chat modes: ${outcome.supportedChatModes.join(', ')}.`;
     case 'completed':
@@ -339,6 +360,8 @@ function getDeliveryAdapter(deliveryTarget: RunTemplateDeliveryTarget): RunTempl
       return copilotChatDeliveryAdapter;
     case 'editor':
       return editorDeliveryAdapter;
+    case 'lm-api':
+      return lmApiDeliveryAdapter;
     default:
       throw new Error(`No delivery adapter is registered for "${deliveryTarget}".`);
   }

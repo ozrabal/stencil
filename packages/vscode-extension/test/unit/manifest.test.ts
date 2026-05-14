@@ -30,12 +30,14 @@ describe('package contributions', () => {
     });
   });
 
-  it('contributes only the supported Epic 1 command surface', () => {
+  it('contributes the supported run-template command surface', () => {
     expect(packageJson.activationEvents).toEqual([
       'onCommand:stencil.openTemplate',
       'onCommand:stencil.runTemplate',
       'onCommand:stencil.runTemplateInCopilotChat',
       'onCommand:stencil.runTemplateInCopilotChatSend',
+      'onCommand:stencil.runTemplateWithLanguageModel',
+      'onCommand:stencil.runTemplateWithLanguageModelSelectModel',
       'onCommand:stencil.runTemplateInCopilotChatWithMode',
       'onCommand:stencil.createTemplate',
       'onCommand:stencil.listTemplates',
@@ -54,6 +56,14 @@ describe('package contributions', () => {
       {
         command: 'stencil.runTemplateInCopilotChatSend',
         title: 'Stencil: Run Template in Copilot Chat (Send)',
+      },
+      {
+        command: 'stencil.runTemplateWithLanguageModel',
+        title: 'Stencil: Run Template with Language Model',
+      },
+      {
+        command: 'stencil.runTemplateWithLanguageModelSelectModel',
+        title: 'Stencil: Run Template with Language Model (Select Model)',
       },
       {
         command: 'stencil.runTemplateInCopilotChatWithMode',

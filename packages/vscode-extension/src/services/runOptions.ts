@@ -23,6 +23,7 @@ export interface RunTemplateRequest {
   invocationSource: RunTemplateInvocationSource;
   options?: Partial<RunTemplateExecutionOptions>;
   requestedTarget?: RunTemplateRequestTarget;
+  selectedLanguageModelId?: string;
   stencil: Stencil;
   workspace: ResolvedWorkspace;
 }
@@ -30,9 +31,12 @@ export interface RunTemplateRequest {
 export function resolveRunTemplateExecutionOptions(
   options?: Partial<RunTemplateExecutionOptions>,
 ): RunTemplateExecutionOptions {
+  const deliveryTarget = options?.deliveryTarget ?? 'editor';
+  const requestedMode = options?.mode ?? 'default';
+
   return {
     chatMode: options?.chatMode ?? 'ask',
-    deliveryTarget: options?.deliveryTarget ?? 'editor',
-    mode: options?.mode ?? 'default',
+    deliveryTarget,
+    mode: deliveryTarget === 'lm-api' && requestedMode === 'default' ? 'execute' : requestedMode,
   };
 }

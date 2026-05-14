@@ -5,12 +5,25 @@ import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('runTemplateService', () => {
+  class MockLmApiDeliveryCancelledError extends Error {
+    constructor() {
+      super('Language model execution was cancelled.');
+    }
+  }
+
+  class MockLmApiDeliveryError extends Error {
+    constructor(readonly userMessage: string) {
+      super(userMessage);
+    }
+  }
+
   const buildPlaceholderPromptPlan = vi.fn();
   const collectPlaceholderInputs = vi.fn();
   const resolveRunTemplateTarget = vi.fn();
   const getDeliveryTargetCapability = vi.fn();
   const copilotDeliver = vi.fn();
   const deliver = vi.fn();
+  const lmApiDeliver = vi.fn();
   const getDiagnostics = vi.fn();
   const showErrorMessage = vi.fn();
   const showInformationMessage = vi.fn();
@@ -56,6 +69,7 @@ describe('runTemplateService', () => {
     getDeliveryTargetCapability.mockReset();
     copilotDeliver.mockReset();
     deliver.mockReset();
+    lmApiDeliver.mockReset();
     getDiagnostics.mockReset();
     showErrorMessage.mockReset();
     showInformationMessage.mockReset();
@@ -124,6 +138,15 @@ describe('runTemplateService', () => {
         deliver: copilotDeliver,
         target: 'copilot-chat',
       },
+    }));
+
+    vi.doMock('../../../src/services/delivery/lmApiDelivery.js', () => ({
+      lmApiDeliveryAdapter: {
+        deliver: lmApiDeliver,
+        target: 'lm-api',
+      },
+      LmApiDeliveryCancelledError: MockLmApiDeliveryCancelledError,
+      LmApiDeliveryError: MockLmApiDeliveryError,
     }));
   });
 
@@ -532,6 +555,310 @@ describe('runTemplateService', () => {
       kind: 'cancelled',
       stage: 'placeholder-input',
       templateName: 'needs-input',
+    });
+  });
+
+  it('normalizes the default lm-api mode to execute before checking capability availability', async () => {
+    const stencil = {
+      get: vi.fn(),
+      resolve: vi.fn(),
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
+    expect(stencil.get).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'lm-api',
+      kind: 'target-unavailable',
+      mode: 'execute',
+      reason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    });
+  });
+
+  it('returns mode-unavailable when lm-api is available but invoked with an unsupported mode', async () => {
+    const stencil = {
+      get: vi.fn(),
+      resolve: vi.fn(),
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api', mode: 'send' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
+    expect(stencil.get).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'lm-api',
+      kind: 'mode-unavailable',
+      mode: 'send',
+      supportedModes: ['execute'],
+    });
+  });
+
+  it('returns target-unavailable when lm-api is implemented but no runtime support exists', async () => {
+    const stencil = {
+      get: vi.fn(),
+      resolve: vi.fn(),
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api', mode: 'execute' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
+    expect(stencil.get).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'lm-api',
+      kind: 'target-unavailable',
+      mode: 'execute',
+      reason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    });
+  });
+
+  it('delivers the resolved prompt through lm-api when runtime support exists', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    lmApiDeliver.mockResolvedValue({
+      deliveryActionLabel: 'streamed',
+      deliveryTarget: 'lm-api',
+      deliveryTargetLabel: 'Stencil LM response panel',
+      panelTitle: 'Stencil Language Model Response',
+      surfaceLabel: 'Stencil LM response panel',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(resolveRunTemplateTarget).toHaveBeenCalledWith({
+      requestedTarget: undefined,
+      stencil,
+      workspace,
+    });
+    expect(resolve).toHaveBeenCalledWith('alpha', {});
+    expect(lmApiDeliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'execute',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'streamed',
+        deliveryTarget: 'lm-api',
+        deliveryTargetLabel: 'Stencil LM response panel',
+        panelTitle: 'Stencil Language Model Response',
+        surfaceLabel: 'Stencil LM response panel',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+  });
+
+  it('passes a selected language model id through to lm-api delivery', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    lmApiDeliver.mockResolvedValue({
+      deliveryActionLabel: 'streamed',
+      deliveryTarget: 'lm-api',
+      deliveryTargetLabel: 'Stencil LM response panel',
+      panelTitle: 'Stencil Language Model Response',
+      surfaceLabel: 'Stencil LM response panel',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      selectedLanguageModelId: 'copilot-2',
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(lmApiDeliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'execute',
+      resolvedBody: '# Prompt',
+      selectedModelId: 'copilot-2',
+      templateName: 'alpha',
+    });
+  });
+
+  it('returns a dedicated cancellation outcome when lm-api execution is cancelled', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    lmApiDeliver.mockRejectedValue(new MockLmApiDeliveryCancelledError());
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      kind: 'cancelled',
+      stage: 'lm-api-execution',
+      templateName: 'alpha',
+    });
+  });
+
+  it('surfaces a typed lm-api delivery failure without falling back', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    lmApiDeliver.mockRejectedValue(
+      new MockLmApiDeliveryError(
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      ),
+    );
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(deliver).not.toHaveBeenCalled();
+    expect(copilotDeliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'lm-api',
+      kind: 'delivery-failed',
+      reason:
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      templateName: 'alpha',
     });
   });
 

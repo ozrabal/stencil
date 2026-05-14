@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RunTemplateExecutionOptions } from '../../../src/services/runOptions.js';
+
 describe('registerRunTemplateCommand', () => {
   const getDeliveryTargetCapability = vi.fn();
   const registerCommand = vi.fn();
+  const selectChatModels = vi.fn();
   const showCommandError = vi.fn();
   const hasStencilWorkspaceSetup = vi.fn();
   const resolveWorkspace = vi.fn();
@@ -26,6 +29,7 @@ describe('registerRunTemplateCommand', () => {
 
     registerCommand.mockReset();
     getDeliveryTargetCapability.mockReset();
+    selectChatModels.mockReset();
     showCommandError.mockReset();
     hasStencilWorkspaceSetup.mockReset();
     resolveWorkspace.mockReset();
@@ -52,10 +56,14 @@ describe('registerRunTemplateCommand', () => {
       supportedModes: ['default', 'insert', 'send'],
       target: 'copilot-chat',
     });
+    selectChatModels.mockResolvedValue([]);
 
     vi.doMock('vscode', () => ({
       commands: {
         registerCommand,
+      },
+      lm: {
+        selectChatModels,
       },
       window: {
         showInformationMessage: vi.fn(),
@@ -83,6 +91,7 @@ describe('registerRunTemplateCommand', () => {
 
     vi.doMock('../../../src/services/delivery/capabilities.js', () => ({
       getDeliveryTargetCapability,
+      LANGUAGE_MODEL_API_DEFAULT_SELECTOR: { vendor: 'copilot' },
     }));
   });
 
@@ -211,6 +220,110 @@ describe('registerRunTemplateCommand', () => {
     });
   });
 
+  it('supports an explicit lm-api command wiring shape for future registration', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+
+    const callback = await registerCommandAndGetCallback(
+      {
+        deliveryTarget: 'lm-api',
+      },
+      'stencil.runTemplateWithLanguageModel',
+    );
+    await callback('alpha');
+
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        deliveryTarget: 'lm-api',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+  });
+
+  it('runs with the only available language model without prompting', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+    selectChatModels.mockResolvedValue([{ id: 'copilot-1', name: 'Copilot Model' }]);
+
+    const callback = await registerLanguageModelSelectionCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(showQuickPick).not.toHaveBeenCalled();
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        deliveryTarget: 'lm-api',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      selectedLanguageModelId: 'copilot-1',
+      stencil,
+      workspace,
+    });
+  });
+
+  it('prompts for a language model when multiple compatible models are available', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+    selectChatModels.mockResolvedValue([
+      { id: 'copilot-1', name: 'Copilot Model 1' },
+      { id: 'copilot-2', name: 'Copilot Model 2' },
+    ]);
+    showQuickPick.mockResolvedValue({
+      description: 'copilot-2',
+      label: 'Copilot Model 2',
+      value: 'copilot-2',
+    });
+
+    const callback = await registerLanguageModelSelectionCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(showQuickPick).toHaveBeenCalledWith(
+      [
+        {
+          description: 'copilot-1',
+          label: 'Copilot Model 1',
+          value: 'copilot-1',
+        },
+        {
+          description: 'copilot-2',
+          label: 'Copilot Model 2',
+          value: 'copilot-2',
+        },
+      ],
+      {
+        placeHolder: 'Select a language model',
+        title: 'Stencil: Run Template with Language Model',
+      },
+    );
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        deliveryTarget: 'lm-api',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      selectedLanguageModelId: 'copilot-2',
+      stencil,
+      workspace,
+    });
+  });
+
+  it('skips lm-api execution when the language model picker is cancelled', async () => {
+    selectChatModels.mockResolvedValue([
+      { id: 'copilot-1', name: 'Copilot Model 1' },
+      { id: 'copilot-2', name: 'Copilot Model 2' },
+    ]);
+    showQuickPick.mockResolvedValue(undefined);
+
+    const callback = await registerLanguageModelSelectionCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(runTemplate).not.toHaveBeenCalled();
+    expect(showRunTemplateOutcomeMessage).not.toHaveBeenCalled();
+  });
+
   it('selects a supported Copilot chat mode before running', async () => {
     const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
     getStencil.mockReturnValue(stencil);
@@ -248,7 +361,7 @@ describe('registerRunTemplateCommand', () => {
   });
 
   async function registerCommandAndGetCallback(
-    executionOptions?: { deliveryTarget?: 'copilot-chat'; mode?: 'insert' | 'send' },
+    executionOptions?: Partial<RunTemplateExecutionOptions>,
     commandId = 'stencil.runTemplate.test',
   ): Promise<(...args: unknown[]) => Promise<void>> {
     const { registerRunTemplateCommand } = await import('../../../src/commands/runTemplate.js');
@@ -268,6 +381,22 @@ describe('registerRunTemplateCommand', () => {
     registerRunTemplateInCopilotChatWithModeCommand('stencil.runTemplateInCopilotChatWithMode');
     const call = registerCommand.mock.calls.find(
       ([registeredCommandId]) => registeredCommandId === 'stencil.runTemplateInCopilotChatWithMode',
+    );
+    expect(call).toBeDefined();
+    return call?.[1] as (...args: unknown[]) => Promise<void>;
+  }
+
+  async function registerLanguageModelSelectionCommandAndGetCallback(): Promise<
+    (...args: unknown[]) => Promise<void>
+  > {
+    const { registerRunTemplateWithLanguageModelSelectModelCommand } =
+      await import('../../../src/commands/runTemplate.js');
+    registerRunTemplateWithLanguageModelSelectModelCommand(
+      'stencil.runTemplateWithLanguageModelSelectModel',
+    );
+    const call = registerCommand.mock.calls.find(
+      ([registeredCommandId]) =>
+        registeredCommandId === 'stencil.runTemplateWithLanguageModelSelectModel',
     );
     expect(call).toBeDefined();
     return call?.[1] as (...args: unknown[]) => Promise<void>;

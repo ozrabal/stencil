@@ -1,6 +1,6 @@
 # VS Code Extension Manual Acceptance
 
-Use this checklist in an Extension Development Host for the current MVP plus Epic 4 Copilot Chat delivery.
+Use this checklist in an Extension Development Host for the current extension surface, including Copilot Chat and Language Model API delivery.
 
 ## Checklist
 
@@ -55,6 +55,29 @@ Use this checklist in an Extension Development Host for the current MVP plus Epi
    Expected result: the resolved prompt still opens in a new editor and the message explains that Copilot failed and editor fallback was used.
 8. Cancel placeholder input during a Copilot-targeted run.
    Expected result: no Copilot Chat handoff happens and no fallback editor opens.
+
+## Language Model API Checklist
+
+1. Run `Stencil: Run Template with Language Model` for a template satisfied by defaults and `$ctx.*`.
+   Expected result: Stencil opens or reuses the response panel, shows the prompt preview immediately, and streams the model response into the panel.
+2. Run the same LM command for a template that requires placeholder input.
+   Expected result: all placeholder prompts complete before any LM request is sent, and the final resolved prompt is the one shown in the panel.
+3. Run `Stencil: Run Template with Language Model (Select Model)` in an environment with one compatible model.
+   Expected result: no picker is shown and the run uses that single model directly.
+4. Run `Stencil: Run Template with Language Model (Select Model)` in an environment with multiple compatible models.
+   Expected result: a Quick Pick appears, the selected model id is reflected in the panel, and the run uses that chosen model only for the current execution.
+5. Cancel the model picker for `Stencil: Run Template with Language Model (Select Model)`.
+   Expected result: no LM request is sent, no panel run starts, and no extra outcome message appears.
+6. Click `Cancel` in the LM response panel while a long response is still streaming.
+   Expected result: the panel status changes to `cancelled`, streaming stops, and the information message reports LM execution cancellation.
+7. Close the LM response panel during an active LM request.
+   Expected result: the in-flight request is cancelled immediately.
+8. Re-run an LM command after a cancellation.
+   Expected result: the same panel is reused, old response text is cleared, and a fresh run starts.
+9. Run an LM command in an environment where `vscode.lm.selectChatModels` is unavailable or returns no compatible models.
+   Expected result: Stencil reports the LM target as unavailable with a specific reason and does not fall back to another target.
+10. Simulate or observe `NoPermissions`, `Blocked`, or `NotFound` failures from the LM API.
+    Expected result: the panel ends in `error`, the message explains the LM-specific failure clearly, and no fallback editor or Copilot handoff occurs.
 
 ## Suggested Validation Commands
 

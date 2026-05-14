@@ -3,7 +3,10 @@ import * as vscode from 'vscode';
 import type { RunTemplateChatMode, RunTemplateExecutionOptions } from '../services/runOptions.js';
 import type { RunTemplateCommandTarget, TemplateLeafTreeItemMetadata } from '../types.js';
 
-import { getDeliveryTargetCapability } from '../services/delivery/capabilities.js';
+import {
+  getDeliveryTargetCapability,
+  LANGUAGE_MODEL_API_DEFAULT_SELECTOR,
+} from '../services/delivery/capabilities.js';
 import { runTemplate, showRunTemplateOutcomeMessage } from '../services/runTemplateService.js';
 import { registerWorkspaceCommand } from './shared.js';
 
@@ -12,6 +15,9 @@ export const RUN_TEMPLATE_IN_COPILOT_CHAT_COMMAND_ID = 'stencil.runTemplateInCop
 export const RUN_TEMPLATE_IN_COPILOT_CHAT_SEND_COMMAND_ID = 'stencil.runTemplateInCopilotChatSend';
 export const RUN_TEMPLATE_IN_COPILOT_CHAT_WITH_MODE_COMMAND_ID =
   'stencil.runTemplateInCopilotChatWithMode';
+export const RUN_TEMPLATE_WITH_LANGUAGE_MODEL_COMMAND_ID = 'stencil.runTemplateWithLanguageModel';
+export const RUN_TEMPLATE_WITH_LANGUAGE_MODEL_SELECT_MODEL_COMMAND_ID =
+  'stencil.runTemplateWithLanguageModelSelectModel';
 
 export function registerRunTemplateCommand(
   commandId = RUN_TEMPLATE_COMMAND_ID,
@@ -53,6 +59,33 @@ export function registerRunTemplateInCopilotChatWithModeCommand(
           mode: 'insert',
         },
         ...(requestedTarget !== undefined ? { requestedTarget } : {}),
+        stencil,
+        workspace,
+      });
+      await showRunTemplateOutcomeMessage(outcome);
+    },
+  });
+}
+
+export function registerRunTemplateWithLanguageModelSelectModelCommand(
+  commandId = RUN_TEMPLATE_WITH_LANGUAGE_MODEL_SELECT_MODEL_COMMAND_ID,
+): vscode.Disposable {
+  return registerWorkspaceCommand({
+    commandId,
+    handler: async ({ commandArgs, stencil, workspace }) => {
+      const requestedTarget = resolveRequestedTarget(commandArgs);
+      const selectedLanguageModelId = await selectLanguageModelIdForRun();
+      if (selectedLanguageModelId === null) {
+        return;
+      }
+
+      const outcome = await runTemplate({
+        invocationSource: resolveInvocationSource(commandArgs),
+        options: {
+          deliveryTarget: 'lm-api',
+        },
+        ...(requestedTarget !== undefined ? { requestedTarget } : {}),
+        ...(selectedLanguageModelId !== undefined ? { selectedLanguageModelId } : {}),
         stencil,
         workspace,
       });
@@ -151,6 +184,27 @@ async function selectCopilotChatMode(): Promise<RunTemplateChatMode | undefined>
   );
 
   return selected?.value;
+}
+
+async function selectLanguageModelIdForRun(): Promise<null | string | undefined> {
+  const models = await vscode.lm.selectChatModels(LANGUAGE_MODEL_API_DEFAULT_SELECTOR);
+  if (models.length <= 1) {
+    return models[0]?.id;
+  }
+
+  const selected = await vscode.window.showQuickPick(
+    models.map((model) => ({
+      description: model.id,
+      label: model.name,
+      value: model.id,
+    })),
+    {
+      placeHolder: 'Select a language model',
+      title: 'Stencil: Run Template with Language Model',
+    },
+  );
+
+  return selected?.value ?? null;
 }
 
 function formatCopilotChatModeLabel(chatMode: RunTemplateChatMode): string {

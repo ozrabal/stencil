@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 describe('delivery capabilities', () => {
   let clipboardWriteText: ((value: string) => Promise<void>) | undefined;
   let getCommands: ((filterInternal?: boolean) => Thenable<string[]>) | undefined;
+  let selectChatModels:
+    | ((selector: { vendor?: string }) => Thenable<Array<Record<string, unknown>>>)
+    | undefined;
   let openTextDocument: ((options: unknown) => Promise<unknown>) | undefined;
   let showTextDocument: ((document: unknown) => Promise<unknown>) | undefined;
   let version: string;
@@ -12,6 +15,7 @@ describe('delivery capabilities', () => {
 
     clipboardWriteText = undefined;
     getCommands = undefined;
+    selectChatModels = undefined;
     openTextDocument = undefined;
     showTextDocument = undefined;
     version = '1.100.0';
@@ -27,6 +31,11 @@ describe('delivery capabilities', () => {
           get writeText() {
             return clipboardWriteText;
           },
+        },
+      },
+      lm: {
+        get selectChatModels() {
+          return selectChatModels;
         },
       },
       get version() {
@@ -138,5 +147,54 @@ describe('delivery capabilities', () => {
       unavailableReason:
         'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
     });
+  });
+
+  it('reports lm-api as unavailable when the VS Code runtime does not expose model selection', async () => {
+    const { getDeliveryTargetCapability } =
+      await import('../../../src/services/delivery/capabilities.js');
+
+    await expect(getDeliveryTargetCapability('lm-api')).resolves.toMatchObject({
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because this VS Code runtime does not expose vscode.lm.selectChatModels.',
+    });
+  });
+
+  it('reports lm-api as unavailable when no compatible Copilot-backed models are returned', async () => {
+    const { getDeliveryTargetCapability } =
+      await import('../../../src/services/delivery/capabilities.js');
+
+    selectChatModels = vi.fn().mockResolvedValue([]);
+
+    await expect(getDeliveryTargetCapability('lm-api')).resolves.toMatchObject({
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    });
+    expect(selectChatModels).toHaveBeenCalledWith({ vendor: 'copilot' });
+  });
+
+  it('reports lm-api as available when a compatible Copilot-backed model exists', async () => {
+    const { getDeliveryTargetCapability } =
+      await import('../../../src/services/delivery/capabilities.js');
+
+    selectChatModels = vi.fn().mockResolvedValue([{ id: 'copilot-chat-1' }]);
+
+    await expect(getDeliveryTargetCapability('lm-api')).resolves.toMatchObject({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+    });
+    expect(selectChatModels).toHaveBeenCalledWith({ vendor: 'copilot' });
   });
 });

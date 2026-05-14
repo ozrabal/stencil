@@ -9,6 +9,8 @@ const CONTRIBUTED_COMMANDS = [
   'stencil.runTemplate',
   'stencil.runTemplateInCopilotChat',
   'stencil.runTemplateInCopilotChatSend',
+  'stencil.runTemplateWithLanguageModel',
+  'stencil.runTemplateWithLanguageModelSelectModel',
   'stencil.runTemplateInCopilotChatWithMode',
   'stencil.createTemplate',
   'stencil.listTemplates',

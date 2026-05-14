@@ -2,12 +2,14 @@
 
 VS Code adapter for the shipped Stencil MVP. This package keeps template logic in `@stencil-pm/core` and exposes a narrow VS Code surface around it.
 
-## MVP Surface
+## Command Surface
 
 - `Stencil: Run Template`
 - `Stencil: Run Template in Copilot Chat`
 - `Stencil: Run Template in Copilot Chat (Send)`
 - `Stencil: Run Template in Copilot Chat (Select Mode)`
+- `Stencil: Run Template with Language Model`
+- `Stencil: Run Template with Language Model (Select Model)`
 - `Stencil: Create Template`
 - `Stencil: List Templates`
 - `Stencil Templates` Explorer view for browsing collections and templates
@@ -72,6 +74,13 @@ Copilot Chat delivery is available through three explicit commands:
 
 If Copilot Chat is unavailable or the handoff fails, Stencil falls back to the existing editor delivery path and explains what happened.
 
+Language Model API delivery is available through two explicit commands:
+
+- `Stencil: Run Template with Language Model` runs against the first compatible Copilot-backed model returned by `vscode.lm.selectChatModels({ vendor: 'copilot' })`.
+- `Stencil: Run Template with Language Model (Select Model)` lets you pick a compatible model for that run when more than one is available.
+
+LM API delivery does not fall back to Copilot Chat or the editor. If the runtime has no compatible model, access is blocked, permission is missing, or the selected model disappears, Stencil surfaces the LM-specific outcome directly.
+
 ## Template Input Syntax
 
 `Stencil: Run Template` prompts from the normalized input contract returned by `@stencil-pm/core`.
@@ -105,13 +114,15 @@ The run flow is split into explicit seams:
 - delivery adapters in [`src/services/delivery/`](./src/services/delivery/)
 - capability checks in [`src/services/delivery/capabilities.ts`](./src/services/delivery/capabilities.ts)
 
-The current supported state after Epic 4 is:
+The current supported state is:
 
 - `editor` delivery with `default` mode is supported end to end
 - `copilot-chat` delivery supports `insert` and `send`
+- `lm-api` delivery supports `execute`
 - Copilot chat modes are runtime-gated: `ask` is always supported, `edit` and `agent` require VS Code `1.100+`
-- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, unavailable chat modes, and Copilot fallback are normalized as typed run outcomes before messaging
-- `clipboard` and `lm-api` remain reserved in the contract but are not implemented yet
+- LM API mode normalization maps `default` to `execute`
+- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, unavailable chat modes, LM cancellation, and Copilot fallback are normalized as typed run outcomes before messaging
+- `clipboard` remains reserved in the contract and is not implemented yet
 
 Current entrypoints all converge on the same request shape:
 
@@ -126,11 +137,21 @@ Current entrypoints all converge on the same request shape:
 - When the runtime only supports `ask`, the mode-selection command offers only `ask`
 - When Copilot Chat is unavailable or command execution throws, Stencil opens the resolved prompt in a new editor instead of discarding the run
 
+## Language Model API Notes
+
+- Compatibility is probed at runtime via `vscode.lm.selectChatModels({ vendor: 'copilot' })`.
+- The panel is extension-owned and singleton-scoped: repeated LM runs reuse the same panel and reset its content for the new request.
+- The panel shows the template name, selected model, prompt preview, streamed response text, and run status.
+- The panel `Cancel` action cancels the active LM request, and closing the panel cancels an in-flight request as well.
+- `Stencil: Run Template with Language Model (Select Model)` does not persist the chosen model. It only affects the current run.
+- If the selected model is no longer available by send time, the run fails explicitly and asks the user to retry with another model.
+- Deferred follow-up work still belongs to Epic 5 and Epic 6: broader command/config rationalization and explicit fallback policy.
+
 ## Next Integration Points
 
 - Epic 5 should rationalize command contributions, defaults, and mode-selection UX.
 - Epic 6 should own automatic fallback priority between future targets rather than reintroducing branching in command handlers.
-- Epic 7 should add LM API execution and streaming UI behind the existing run options and delivery capability contracts.
+- Future work can extend the current LM panel with richer actions, but without moving LM-specific behavior into core.
 
 `Stencil: Create Template` walks through a small authoring wizard for name, description, tags, collection, and a body seed. The created template is saved through `@stencil-pm/core`, opened in the editor, and the tree view is refreshed.
 
@@ -149,7 +170,9 @@ Current entrypoints all converge on the same request shape:
 - Placeholder collection stays on Input Boxes only for MVP, which avoids Webview startup and preview synchronization overhead.
 - Run target resolution lists templates only when no explicit target or active template match exists, which avoids unnecessary Quick Pick setup and keeps the happy path cheap.
 - Delivery capability probing is side-effect free and caches the VS Code command list so Copilot checks stay cheap across repeated runs.
+- LM model probing uses the VS Code LM selector directly and only prompts for model choice when the explicit select-model command is used with multiple compatible models.
 - Template resolution happens once per run and the resolved body is reused for editor fallback instead of recomputing it after a Copilot failure.
+- The LM response panel is a singleton webview with inline HTML, which avoids introducing a separate frontend toolchain or extra bundle during extension activation.
 
 ## Verification
 

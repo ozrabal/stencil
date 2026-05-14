@@ -19,6 +19,7 @@ const COPILOT_CHAT_COMMAND_ID = 'workbench.action.chat.open';
 const COPILOT_CHAT_MODE_MINIMUM_VSCODE_VERSION = '1.100.0';
 const COPILOT_DEFAULT_SUPPORTED_CHAT_MODES: RunTemplateChatMode[] = ['ask'];
 const COPILOT_ALL_SUPPORTED_CHAT_MODES: RunTemplateChatMode[] = ['ask', 'edit', 'agent'];
+export const LANGUAGE_MODEL_API_DEFAULT_SELECTOR = { vendor: 'copilot' } as const;
 
 let cachedCommandIdsPromise: Promise<Set<string>> | undefined;
 
@@ -49,14 +50,7 @@ export async function getDeliveryTargetCapability(
         unavailableReason: 'VS Code editor services are not available in the current runtime.',
       };
     case 'lm-api':
-      return {
-        available: false,
-        implemented: false,
-        supportedChatModes: [],
-        supportedModes: ['default', 'execute'],
-        target,
-        unavailableReason: 'LM API delivery is not available in this extension build.',
-      };
+      return getLanguageModelApiCapability();
   }
 }
 
@@ -78,6 +72,41 @@ async function getCopilotChatCapability(): Promise<RunTemplateDeliveryCapability
             'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
         }
       : {}),
+  };
+}
+
+async function getLanguageModelApiCapability(): Promise<RunTemplateDeliveryCapability> {
+  if (typeof vscode.lm?.selectChatModels !== 'function') {
+    return {
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because this VS Code runtime does not expose vscode.lm.selectChatModels.',
+    };
+  }
+
+  const models = await vscode.lm.selectChatModels(LANGUAGE_MODEL_API_DEFAULT_SELECTOR);
+  if (models.length === 0) {
+    return {
+      available: false,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['execute'],
+      target: 'lm-api',
+      unavailableReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    };
+  }
+
+  return {
+    available: true,
+    implemented: true,
+    supportedChatModes: [],
+    supportedModes: ['execute'],
+    target: 'lm-api',
   };
 }
 
