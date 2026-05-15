@@ -8,6 +8,7 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
   activationEvents?: string[];
   contributes?: {
     commands?: Array<Record<string, unknown>>;
+    configuration?: Record<string, unknown>;
     configurationDefaults?: Record<string, Record<string, unknown>>;
     grammars?: Array<Record<string, unknown>>;
     languages?: Array<Record<string, unknown>>;
@@ -34,6 +35,8 @@ describe('package contributions', () => {
     expect(packageJson.activationEvents).toEqual([
       'onCommand:stencil.openTemplate',
       'onCommand:stencil.runTemplate',
+      'onCommand:stencil.runTemplateWithMode',
+      'onCommand:stencil.runTemplateInEditor',
       'onCommand:stencil.runTemplateInCopilotChat',
       'onCommand:stencil.runTemplateInCopilotChatSend',
       'onCommand:stencil.runTemplateWithLanguageModel',
@@ -49,6 +52,14 @@ describe('package contributions', () => {
     expect(packageJson.contributes?.commands).toEqual([
       { command: 'stencil.openTemplate', title: 'Stencil: Open Template' },
       { command: 'stencil.runTemplate', title: 'Stencil: Run Template' },
+      {
+        command: 'stencil.runTemplateWithMode',
+        title: 'Stencil: Run Template With Mode...',
+      },
+      {
+        command: 'stencil.runTemplateInEditor',
+        title: 'Stencil: Run Template in Editor',
+      },
       {
         command: 'stencil.runTemplateInCopilotChat',
         title: 'Stencil: Run Template in Copilot Chat',
@@ -83,12 +94,37 @@ describe('package contributions', () => {
     expect(packageJson.contributes?.menus).toMatchObject({
       'view/item/context': [
         {
-          command: 'stencil.openTemplate',
+          command: 'stencil.runTemplate',
           group: 'inline',
           when: 'view == stencilTemplates && viewItem == stencil.template',
         },
         {
-          command: 'stencil.runTemplate',
+          command: 'stencil.openTemplate',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplateWithMode',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplateInEditor',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplateInCopilotChat',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplateInCopilotChatSend',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
+          command: 'stencil.runTemplateWithLanguageModel',
           group: 'navigation',
           when: 'view == stencilTemplates && viewItem == stencil.template',
         },
@@ -100,6 +136,39 @@ describe('package contributions', () => {
           when: 'view == stencilTemplates',
         },
       ],
+    });
+  });
+
+  it('contributes run configuration settings for default target and selection behavior', () => {
+    expect(packageJson.contributes?.configuration).toMatchObject({
+      properties: {
+        'stencil.run.defaultChatMode': {
+          default: 'ask',
+          enum: ['ask', 'edit', 'agent'],
+          type: 'string',
+        },
+        'stencil.run.defaultMode': {
+          default: 'default',
+          enum: ['default', 'insert', 'send', 'execute'],
+          type: 'string',
+        },
+        'stencil.run.defaultTarget': {
+          default: 'copilot-chat',
+          enum: ['editor', 'copilot-chat', 'lm-api'],
+          type: 'string',
+        },
+        'stencil.run.lastUsedScope': {
+          default: 'session',
+          enum: ['session', 'workspace', 'global'],
+          type: 'string',
+        },
+        'stencil.run.selectionBehavior': {
+          default: 'defaults',
+          enum: ['defaults', 'picker', 'last-used'],
+          type: 'string',
+        },
+      },
+      title: 'Stencil',
     });
   });
 
@@ -133,9 +202,7 @@ describe('package contributions', () => {
     });
   });
 
-  it('does not advertise unsupported MVP settings or extra surfaces', () => {
-    expect(packageJson.contributes).not.toHaveProperty('configuration');
-
+  it('does not advertise unsupported extra surfaces', () => {
     const commandIds =
       packageJson.contributes?.commands?.map((command) => command.command).sort() ?? [];
     expect(commandIds).not.toContain('stencil.previewTemplate');

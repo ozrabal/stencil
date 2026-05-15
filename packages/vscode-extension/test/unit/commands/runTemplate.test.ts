@@ -10,6 +10,10 @@ describe('registerRunTemplateCommand', () => {
   const hasStencilWorkspaceSetup = vi.fn();
   const resolveWorkspace = vi.fn();
   const getStencil = vi.fn();
+  const getResolvedRunConfiguration = vi.fn();
+  const getRunPreferenceConfiguration = vi.fn();
+  const normalizeRunProfile = vi.fn();
+  const pickRunProfile = vi.fn();
   const runTemplate = vi.fn();
   const showRunTemplateOutcomeMessage = vi.fn();
   const showQuickPick = vi.fn();
@@ -34,6 +38,10 @@ describe('registerRunTemplateCommand', () => {
     hasStencilWorkspaceSetup.mockReset();
     resolveWorkspace.mockReset();
     getStencil.mockReset();
+    getResolvedRunConfiguration.mockReset();
+    getRunPreferenceConfiguration.mockReset();
+    normalizeRunProfile.mockReset();
+    pickRunProfile.mockReset();
     runTemplate.mockReset();
     showRunTemplateOutcomeMessage.mockReset();
     showQuickPick.mockReset();
@@ -47,6 +55,36 @@ describe('registerRunTemplateCommand', () => {
     );
     hasStencilWorkspaceSetup.mockResolvedValue(true);
     resolveWorkspace.mockReturnValue(workspace);
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
+      lastUsedScope: 'session',
+      selectionBehavior: 'defaults',
+      warnings: [],
+    });
+    getRunPreferenceConfiguration.mockReturnValue({
+      lastUsedScope: 'session',
+      selectionBehavior: 'defaults',
+      warnings: [],
+    });
+    normalizeRunProfile.mockImplementation(async (profile: Record<string, unknown>) => {
+      if (profile.deliveryTarget === 'lm-api') {
+        return {
+          chatMode: 'ask',
+          deliveryTarget: 'lm-api',
+          mode: 'execute',
+        };
+      }
+
+      return {
+        chatMode: 'ask',
+        mode: profile.mode ?? 'default',
+        ...profile,
+      };
+    });
     getStencil.mockReturnValue({ list: vi.fn() });
     runTemplate.mockResolvedValue({ kind: 'no-target-selected', reason: 'picker-cancelled' });
     getDeliveryTargetCapability.mockResolvedValue({
@@ -89,6 +127,16 @@ describe('registerRunTemplateCommand', () => {
       showRunTemplateOutcomeMessage,
     }));
 
+    vi.doMock('../../../src/services/runConfiguration.js', () => ({
+      getResolvedRunConfiguration,
+      getRunPreferenceConfiguration,
+      normalizeRunProfile,
+    }));
+
+    vi.doMock('../../../src/services/runProfilePicker.js', () => ({
+      pickRunProfile,
+    }));
+
     vi.doMock('../../../src/services/delivery/capabilities.js', () => ({
       getDeliveryTargetCapability,
       LANGUAGE_MODEL_API_DEFAULT_SELECTOR: { vendor: 'copilot' },
@@ -104,6 +152,11 @@ describe('registerRunTemplateCommand', () => {
 
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
       requestedTarget: { templateName: 'alpha' },
       stencil,
       workspace,
@@ -131,6 +184,11 @@ describe('registerRunTemplateCommand', () => {
 
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'tree-item',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
       requestedTarget: { templateName: 'alpha' },
       stencil,
       workspace,
@@ -148,6 +206,116 @@ describe('registerRunTemplateCommand', () => {
     expect(showRunTemplateOutcomeMessage).not.toHaveBeenCalled();
   });
 
+  it('uses the picker-selected profile for the default command when configured', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    const preferenceStore = createPreferenceStore();
+    getStencil.mockReturnValue(stencil);
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
+      lastUsedScope: 'workspace',
+      selectionBehavior: 'picker',
+      warnings: [],
+    });
+    pickRunProfile.mockResolvedValue({
+      chatMode: 'ask',
+      deliveryTarget: 'lm-api',
+      mode: 'execute',
+    });
+    runTemplate.mockResolvedValue({ delivery: {}, kind: 'completed', templateName: 'alpha' });
+
+    const callback = await registerCommandAndGetCallback(undefined, 'stencil.runTemplate', {
+      preferenceStore,
+    });
+    await callback('alpha');
+
+    expect(pickRunProfile).toHaveBeenCalledTimes(1);
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'lm-api',
+        mode: 'execute',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+    expect(preferenceStore.setLastUsedProfile).toHaveBeenCalledWith('session', {
+      chatMode: 'ask',
+      deliveryTarget: 'lm-api',
+      mode: 'execute',
+    });
+  });
+
+  it('skips the default command when the configured picker is cancelled', async () => {
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
+      lastUsedScope: 'session',
+      selectionBehavior: 'picker',
+      warnings: [],
+    });
+    pickRunProfile.mockResolvedValue(undefined);
+
+    const callback = await registerCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(runTemplate).not.toHaveBeenCalled();
+    expect(showRunTemplateOutcomeMessage).not.toHaveBeenCalled();
+  });
+
+  it('reuses the last-used profile when configured and a stored profile exists', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    const preferenceStore = createPreferenceStore({
+      getLastUsedProfile: vi.fn().mockResolvedValue({
+        chatMode: 'edit',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      }),
+    });
+    getStencil.mockReturnValue(stencil);
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
+      lastUsedScope: 'workspace',
+      selectionBehavior: 'last-used',
+      warnings: [],
+    });
+    normalizeRunProfile.mockResolvedValue({
+      chatMode: 'edit',
+      deliveryTarget: 'copilot-chat',
+      mode: 'insert',
+    });
+
+    const callback = await registerCommandAndGetCallback(undefined, 'stencil.runTemplate', {
+      preferenceStore,
+    });
+    await callback('alpha');
+
+    expect(preferenceStore.getLastUsedProfile).toHaveBeenCalledWith('workspace');
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'edit',
+        deliveryTarget: 'copilot-chat',
+        mode: 'insert',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+  });
+
   it('passes explicit execution options through command wiring', async () => {
     const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
     getStencil.mockReturnValue(stencil);
@@ -161,6 +329,7 @@ describe('registerRunTemplateCommand', () => {
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'command-palette',
       options: {
+        chatMode: 'ask',
         deliveryTarget: 'copilot-chat',
         mode: 'send',
       },
@@ -186,6 +355,7 @@ describe('registerRunTemplateCommand', () => {
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'command-palette',
       options: {
+        chatMode: 'ask',
         deliveryTarget: 'copilot-chat',
         mode: 'insert',
       },
@@ -211,6 +381,7 @@ describe('registerRunTemplateCommand', () => {
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'command-palette',
       options: {
+        chatMode: 'ask',
         deliveryTarget: 'copilot-chat',
         mode: 'send',
       },
@@ -235,7 +406,9 @@ describe('registerRunTemplateCommand', () => {
     expect(runTemplate).toHaveBeenCalledWith({
       invocationSource: 'command-palette',
       options: {
+        chatMode: 'ask',
         deliveryTarget: 'lm-api',
+        mode: 'execute',
       },
       requestedTarget: { templateName: 'alpha' },
       stencil,
@@ -324,6 +497,46 @@ describe('registerRunTemplateCommand', () => {
     expect(showRunTemplateOutcomeMessage).not.toHaveBeenCalled();
   });
 
+  it('uses the unified run-with-mode picker command and preserves tree-item invocation', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    const preferenceStore = createPreferenceStore();
+    getStencil.mockReturnValue(stencil);
+    pickRunProfile.mockResolvedValue({
+      chatMode: 'ask',
+      deliveryTarget: 'editor',
+      mode: 'default',
+    });
+    runTemplate.mockResolvedValue({ delivery: {}, kind: 'completed', templateName: 'alpha' });
+
+    const callback = await registerRunTemplateWithModeCommandAndGetCallback(preferenceStore);
+    await callback({
+      metadata: {
+        description: 'Alpha template',
+        kind: 'template',
+        source: 'project',
+        templateFilePath: '/workspace/.stencil/templates/alpha.md',
+        templateName: 'alpha',
+      },
+    });
+
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'tree-item',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'editor',
+        mode: 'default',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+    expect(preferenceStore.setLastUsedProfile).toHaveBeenCalledWith('session', {
+      chatMode: 'ask',
+      deliveryTarget: 'editor',
+      mode: 'default',
+    });
+  });
+
   it('selects a supported Copilot chat mode before running', async () => {
     const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
     getStencil.mockReturnValue(stencil);
@@ -363,9 +576,10 @@ describe('registerRunTemplateCommand', () => {
   async function registerCommandAndGetCallback(
     executionOptions?: Partial<RunTemplateExecutionOptions>,
     commandId = 'stencil.runTemplate.test',
+    services?: { preferenceStore?: ReturnType<typeof createPreferenceStore> },
   ): Promise<(...args: unknown[]) => Promise<void>> {
     const { registerRunTemplateCommand } = await import('../../../src/commands/runTemplate.js');
-    registerRunTemplateCommand(commandId, executionOptions);
+    registerRunTemplateCommand(commandId, executionOptions, services);
     const call = registerCommand.mock.calls.find(
       ([registeredCommandId]) => registeredCommandId === commandId,
     );
@@ -386,6 +600,21 @@ describe('registerRunTemplateCommand', () => {
     return call?.[1] as (...args: unknown[]) => Promise<void>;
   }
 
+  async function registerRunTemplateWithModeCommandAndGetCallback(
+    preferenceStore = createPreferenceStore(),
+  ): Promise<(...args: unknown[]) => Promise<void>> {
+    const { registerRunTemplateWithModeCommand } =
+      await import('../../../src/commands/runTemplate.js');
+    registerRunTemplateWithModeCommand('stencil.runTemplateWithMode', {
+      preferenceStore,
+    });
+    const call = registerCommand.mock.calls.find(
+      ([registeredCommandId]) => registeredCommandId === 'stencil.runTemplateWithMode',
+    );
+    expect(call).toBeDefined();
+    return call?.[1] as (...args: unknown[]) => Promise<void>;
+  }
+
   async function registerLanguageModelSelectionCommandAndGetCallback(): Promise<
     (...args: unknown[]) => Promise<void>
   > {
@@ -400,5 +629,17 @@ describe('registerRunTemplateCommand', () => {
     );
     expect(call).toBeDefined();
     return call?.[1] as (...args: unknown[]) => Promise<void>;
+  }
+
+  function createPreferenceStore(
+    overrides?: Partial<{
+      getLastUsedProfile: ReturnType<typeof vi.fn>;
+      setLastUsedProfile: ReturnType<typeof vi.fn>;
+    }>,
+  ) {
+    return {
+      getLastUsedProfile: overrides?.getLastUsedProfile ?? vi.fn().mockResolvedValue(undefined),
+      setLastUsedProfile: overrides?.setLastUsedProfile ?? vi.fn().mockResolvedValue(undefined),
+    };
   }
 });

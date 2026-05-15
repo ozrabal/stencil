@@ -1,10 +1,12 @@
 # Stencil Template Manager — VS Code Extension
 
-VS Code adapter for the shipped Stencil MVP. This package keeps template logic in `@stencil-pm/core` and exposes a narrow VS Code surface around it.
+VS Code adapter for Stencil. This package keeps template logic in `@stencil-pm/core` and exposes a VS Code-native command, tree-view, and delivery surface around it.
 
 ## Command Surface
 
 - `Stencil: Run Template`
+- `Stencil: Run Template With Mode...`
+- `Stencil: Run Template in Editor`
 - `Stencil: Run Template in Copilot Chat`
 - `Stencil: Run Template in Copilot Chat (Send)`
 - `Stencil: Run Template in Copilot Chat (Select Mode)`
@@ -15,7 +17,7 @@ VS Code adapter for the shipped Stencil MVP. This package keeps template logic i
 - `Stencil Templates` Explorer view for browsing collections and templates
 - `.stencil/**/*.md` language mapping with placeholder-aware syntax highlighting
 
-The extension does not require terminal setup for normal MVP use. `Create Template` bootstraps `.stencil/` on first use when needed.
+The extension does not require terminal setup for normal use. `Create Template` bootstraps `.stencil/` on first use when needed.
 
 ## Context Resolution
 
@@ -64,7 +66,34 @@ Diagnostics: {{$ctx.diagnostics_count}} total, {{$ctx.diagnostics_error_count}} 
 2. The active `.stencil/**/*.md` file
 3. A Quick Pick from the available templates
 
-If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt opens immediately in a new untitled Markdown editor. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without opening partial output.
+If a template resolves from defaults and `$ctx.*` values alone, the resolved prompt is delivered immediately to the selected run target. If values are still missing, the extension collects them sequentially with `vscode.window.showInputBox()`. If the prompt flow is cancelled, execution stops without delivering partial output.
+
+`Stencil: Run Template` chooses its run profile through `stencil.run.selectionBehavior`:
+
+- `defaults` uses normalized settings defaults
+- `picker` opens the same target/mode picker as `Stencil: Run Template With Mode...`
+- `last-used` reuses the most recent normalized run profile from session, workspace, or global scope
+
+Explicit commands always override settings for that invocation. The tree view keeps one inline default run action and exposes explicit targets from the template context menu.
+
+## Run Configuration
+
+The extension contributes these settings:
+
+- `stencil.run.defaultTarget`: `editor`, `copilot-chat`, or `lm-api`
+- `stencil.run.defaultMode`: `default`, `insert`, `send`, or `execute`
+- `stencil.run.defaultChatMode`: `ask`, `edit`, or `agent`
+- `stencil.run.selectionBehavior`: `defaults`, `picker`, or `last-used`
+- `stencil.run.lastUsedScope`: `session`, `workspace`, or `global`
+
+Normalization rules stay target-specific:
+
+- `editor` always uses `default`
+- `copilot-chat` maps `default` to `insert`
+- `lm-api` maps `default` to `execute`
+- unsupported Copilot chat modes fall back to the first runtime-supported mode
+
+`Stencil: Run Template With Mode...` lists only runtime-available profiles. `Editor`, `Copilot Chat`, `Copilot Chat (Send)`, chat-mode-specific Copilot entries, and `Language Model` appear according to capability probes.
 
 Copilot Chat delivery is available through three explicit commands:
 
@@ -111,6 +140,8 @@ The run flow is split into explicit seams:
 - target resolution in [`src/services/runTemplateTarget.ts`](./src/services/runTemplateTarget.ts)
 - placeholder collection in [`src/services/placeholderInput.ts`](./src/services/placeholderInput.ts)
 - run request and internal options in [`src/services/runOptions.ts`](./src/services/runOptions.ts)
+- configuration and profile memory in [`src/services/runConfiguration.ts`](./src/services/runConfiguration.ts) and [`src/services/runPreferenceStore.ts`](./src/services/runPreferenceStore.ts)
+- picker-driven profile selection in [`src/services/runProfilePicker.ts`](./src/services/runProfilePicker.ts)
 - delivery adapters in [`src/services/delivery/`](./src/services/delivery/)
 - capability checks in [`src/services/delivery/capabilities.ts`](./src/services/delivery/capabilities.ts)
 
@@ -128,6 +159,8 @@ Current entrypoints all converge on the same request shape:
 
 - Command Palette runs
 - tree item runs from the `Stencil Templates` Explorer view
+- settings-driven default runs
+- picker-driven multi-target runs
 - active-editor auto-target resolution when no explicit template is supplied
 
 ## Copilot Chat Notes
@@ -144,18 +177,17 @@ Current entrypoints all converge on the same request shape:
 - The panel shows the template name, selected model, prompt preview, streamed response text, and run status.
 - The panel `Cancel` action cancels the active LM request, and closing the panel cancels an in-flight request as well.
 - `Stencil: Run Template with Language Model (Select Model)` does not persist the chosen model. It only affects the current run.
+- `last-used` profile memory persists only the normalized target/mode/chat-mode profile. Selected LM model ids are not persisted.
 - If the selected model is no longer available by send time, the run fails explicitly and asks the user to retry with another model.
-- Deferred follow-up work still belongs to Epic 5 and Epic 6: broader command/config rationalization and explicit fallback policy.
 
 ## Next Integration Points
 
-- Epic 5 should rationalize command contributions, defaults, and mode-selection UX.
 - Epic 6 should own automatic fallback priority between future targets rather than reintroducing branching in command handlers.
 - Future work can extend the current LM panel with richer actions, but without moving LM-specific behavior into core.
 
 `Stencil: Create Template` walks through a small authoring wizard for name, description, tags, collection, and a body seed. The created template is saved through `@stencil-pm/core`, opened in the editor, and the tree view is refreshed.
 
-`Stencil: List Templates` shows a grouped Quick Pick and opens the selected template source file. The Explorer view provides the same browsing surface with `Open Template` and `Run Template` actions on template items.
+`Stencil: List Templates` shows a grouped Quick Pick and opens the selected template source file. The Explorer view provides the same browsing surface with `Open Template`, `Run Template`, `Run Template With Mode...`, and explicit target actions on template items.
 
 ## Workspace Expectations
 
@@ -169,7 +201,9 @@ Current entrypoints all converge on the same request shape:
 - Activation stays narrow: commands, the tree view, and `.stencil/**/*.md` file detection wake the extension only when relevant.
 - Placeholder collection stays on Input Boxes only for MVP, which avoids Webview startup and preview synchronization overhead.
 - Run target resolution lists templates only when no explicit target or active template match exists, which avoids unnecessary Quick Pick setup and keeps the happy path cheap.
+- Default-command policy is adapter-local and thin: configuration reads, profile normalization, and last-used state resolution happen before the shared run service without adding extra branching inside delivery orchestration.
 - Delivery capability probing is side-effect free and caches the VS Code command list so Copilot checks stay cheap across repeated runs.
+- The run-profile picker probes editor, Copilot, and LM capabilities in parallel and skips the picker entirely when no runtime-available profiles exist.
 - LM model probing uses the VS Code LM selector directly and only prompts for model choice when the explicit select-model command is used with multiple compatible models.
 - Template resolution happens once per run and the resolved body is reused for editor fallback instead of recomputing it after a Copilot failure.
 - The LM response panel is a singleton webview with inline HTML, which avoids introducing a separate frontend toolchain or extra bundle during extension activation.

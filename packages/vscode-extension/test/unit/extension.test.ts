@@ -57,9 +57,17 @@ describe('activate', () => {
     const context = { subscriptions: [] as { dispose(): void }[] };
     activate(context as never);
 
-    expect(registerCommand).toHaveBeenCalledTimes(10);
+    expect(registerCommand).toHaveBeenCalledTimes(12);
     expect(registerCommand).toHaveBeenCalledWith('stencil.openTemplate', expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith('stencil.runTemplate', expect.any(Function));
+    expect(registerCommand).toHaveBeenCalledWith(
+      'stencil.runTemplateWithMode',
+      expect.any(Function),
+    );
+    expect(registerCommand).toHaveBeenCalledWith(
+      'stencil.runTemplateInEditor',
+      expect.any(Function),
+    );
     expect(registerCommand).toHaveBeenCalledWith(
       'stencil.runTemplateInCopilotChat',
       expect.any(Function),
@@ -87,6 +95,6 @@ describe('activate', () => {
       expect.any(Function),
     );
     expect(registerTreeDataProvider).toHaveBeenCalledWith('stencilTemplates', expect.any(Object));
-    expect(context.subscriptions).toHaveLength(11);
+    expect(context.subscriptions).toHaveLength(13);
   });
 });

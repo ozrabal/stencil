@@ -13,6 +13,8 @@
   "activationEvents": [
     "onCommand:stencil.openTemplate",
     "onCommand:stencil.runTemplate",
+    "onCommand:stencil.runTemplateWithMode",
+    "onCommand:stencil.runTemplateInEditor",
     "onCommand:stencil.runTemplateInCopilotChat",
     "onCommand:stencil.runTemplateInCopilotChatSend",
     "onCommand:stencil.runTemplateWithLanguageModel",
@@ -49,6 +51,14 @@
         "title": "Stencil: Run Template"
       },
       {
+        "command": "stencil.runTemplateWithMode",
+        "title": "Stencil: Run Template With Mode..."
+      },
+      {
+        "command": "stencil.runTemplateInEditor",
+        "title": "Stencil: Run Template in Editor"
+      },
+      {
         "command": "stencil.runTemplateInCopilotChat",
         "title": "Stencil: Run Template in Copilot Chat"
       },
@@ -82,15 +92,96 @@
         "icon": "$(refresh)"
       }
     ],
+    "configuration": {
+      "title": "Stencil",
+      "properties": {
+        "stencil.run.defaultTarget": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "copilot-chat",
+            "lm-api"
+          ],
+          "default": "copilot-chat",
+          "markdownDescription": "Default delivery target for `Stencil: Run Template` when no per-run selection behavior overrides it."
+        },
+        "stencil.run.defaultMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "insert",
+            "send",
+            "execute"
+          ],
+          "default": "default",
+          "markdownDescription": "Default run mode. Invalid combinations are normalized to a safe target-specific mode."
+        },
+        "stencil.run.defaultChatMode": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "edit",
+            "agent"
+          ],
+          "default": "ask",
+          "markdownDescription": "Preferred Copilot Chat sub-mode when the selected run profile targets Copilot Chat."
+        },
+        "stencil.run.selectionBehavior": {
+          "type": "string",
+          "enum": [
+            "defaults",
+            "picker",
+            "last-used"
+          ],
+          "default": "defaults",
+          "markdownDescription": "How `Stencil: Run Template` chooses its run profile."
+        },
+        "stencil.run.lastUsedScope": {
+          "type": "string",
+          "enum": [
+            "session",
+            "workspace",
+            "global"
+          ],
+          "default": "session",
+          "markdownDescription": "Where the last-used run profile is stored when selection behavior is set to `last-used`."
+        }
+      }
+    },
     "menus": {
       "view/item/context": [
         {
-          "command": "stencil.openTemplate",
+          "command": "stencil.runTemplate",
           "group": "inline",
           "when": "view == stencilTemplates && viewItem == stencil.template"
         },
         {
-          "command": "stencil.runTemplate",
+          "command": "stencil.openTemplate",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateWithMode",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateInEditor",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateInCopilotChat",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateInCopilotChatSend",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateWithLanguageModel",
           "group": "navigation",
           "when": "view == stencilTemplates && viewItem == stencil.template"
         }

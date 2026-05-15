@@ -761,19 +761,15 @@ This keeps the adapter fast and predictable for Epic 1 by avoiding Webview start
 
 #### Output Delivery
 
-After resolution, the MVP writes output to one target only:
+After resolution, the extension routes the prompt through one normalized run profile:
 
-```typescript
-async function openResolvedTemplateOutput(resolvedBody: string): Promise<void> {
-  const doc = await vscode.workspace.openTextDocument({
-    content: resolvedBody,
-    language: 'markdown',
-  });
-  await vscode.window.showTextDocument(doc);
-}
-```
+- `editor` with `default`
+- `copilot-chat` with `insert` or `send`
+- `lm-api` with `execute`
 
-No Claude Code routing, clipboard fallback, terminal delivery, or output-target setting is required for the current extension flow.
+The command layer owns configuration, picker behavior, and last-used profile memory. The shared run service owns capability checks, placeholder prompting, delivery execution, and fallback messaging so command policy does not duplicate delivery logic.
+
+Editor delivery remains a first-class explicit target instead of only a fallback path.
 
 #### VS Code Extension Manifest (package.json contributes)
 
@@ -782,11 +778,43 @@ No Claude Code routing, clipboard fallback, terminal delivery, or output-target 
   "contributes": {
     "commands": [
       { "command": "stencil.runTemplate", "title": "Stencil: Run Template" },
+      { "command": "stencil.runTemplateWithMode", "title": "Stencil: Run Template With Mode..." },
+      { "command": "stencil.runTemplateInEditor", "title": "Stencil: Run Template in Editor" },
+      {
+        "command": "stencil.runTemplateInCopilotChat",
+        "title": "Stencil: Run Template in Copilot Chat"
+      },
+      {
+        "command": "stencil.runTemplateInCopilotChatSend",
+        "title": "Stencil: Run Template in Copilot Chat (Send)"
+      },
+      {
+        "command": "stencil.runTemplateInCopilotChatWithMode",
+        "title": "Stencil: Run Template in Copilot Chat (Select Mode)"
+      },
+      {
+        "command": "stencil.runTemplateWithLanguageModel",
+        "title": "Stencil: Run Template with Language Model"
+      },
+      {
+        "command": "stencil.runTemplateWithLanguageModelSelectModel",
+        "title": "Stencil: Run Template with Language Model (Select Model)"
+      },
       { "command": "stencil.createTemplate", "title": "Stencil: Create Template" },
       { "command": "stencil.listTemplates", "title": "Stencil: List Templates" },
       { "command": "stencil.openTemplate", "title": "Stencil: Open Template" },
       { "command": "stencil.refreshTemplatesView", "title": "Stencil: Refresh Templates View" }
     ],
+    "configuration": {
+      "title": "Stencil",
+      "properties": {
+        "stencil.run.defaultTarget": {},
+        "stencil.run.defaultMode": {},
+        "stencil.run.defaultChatMode": {},
+        "stencil.run.selectionBehavior": {},
+        "stencil.run.lastUsedScope": {}
+      }
+    },
     "views": {
       "explorer": [
         {
@@ -797,15 +825,30 @@ No Claude Code routing, clipboard fallback, terminal delivery, or output-target 
     },
     "menus": {
       "view/item/context": [
+        {
+          "command": "stencil.runTemplate",
+          "group": "inline",
+          "when": "viewItem == stencil.template"
+        },
         { "command": "stencil.openTemplate", "when": "viewItem == stencil.template" },
-        { "command": "stencil.runTemplate", "when": "viewItem == stencil.template" }
+        { "command": "stencil.runTemplateWithMode", "when": "viewItem == stencil.template" },
+        { "command": "stencil.runTemplateInEditor", "when": "viewItem == stencil.template" },
+        { "command": "stencil.runTemplateInCopilotChat", "when": "viewItem == stencil.template" },
+        {
+          "command": "stencil.runTemplateInCopilotChatSend",
+          "when": "viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateWithLanguageModel",
+          "when": "viewItem == stencil.template"
+        }
       ]
     }
   }
 }
 ```
 
-The actual package also contributes a `stencil-template` language, a bundled TextMate grammar, and per-language editor defaults for template files.
+The actual package also contributes a `stencil-template` language, a bundled TextMate grammar, per-language editor defaults for template files, and runtime normalization for default-target and last-used run-profile behavior.
 
 ### 4.3 Codex Adapter (Future — Phase 5)
 
