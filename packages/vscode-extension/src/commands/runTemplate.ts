@@ -20,6 +20,7 @@ import { registerWorkspaceCommand } from './shared.js';
 export const RUN_TEMPLATE_COMMAND_ID = 'stencil.runTemplate';
 export const RUN_TEMPLATE_WITH_MODE_COMMAND_ID = 'stencil.runTemplateWithMode';
 export const RUN_TEMPLATE_IN_EDITOR_COMMAND_ID = 'stencil.runTemplateInEditor';
+export const RUN_TEMPLATE_TO_CLIPBOARD_COMMAND_ID = 'stencil.runTemplateToClipboard';
 export const RUN_TEMPLATE_IN_COPILOT_CHAT_COMMAND_ID = 'stencil.runTemplateInCopilotChat';
 export const RUN_TEMPLATE_IN_COPILOT_CHAT_SEND_COMMAND_ID = 'stencil.runTemplateInCopilotChatSend';
 export const RUN_TEMPLATE_IN_COPILOT_CHAT_WITH_MODE_COMMAND_ID =

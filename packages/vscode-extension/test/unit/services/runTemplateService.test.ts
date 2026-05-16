@@ -22,6 +22,7 @@ describe('runTemplateService', () => {
   const resolveRunTemplateTarget = vi.fn();
   const getDeliveryTargetCapability = vi.fn();
   const copilotDeliver = vi.fn();
+  const clipboardDeliver = vi.fn();
   const deliver = vi.fn();
   const lmApiDeliver = vi.fn();
   const getDiagnostics = vi.fn();
@@ -68,6 +69,7 @@ describe('runTemplateService', () => {
     resolveRunTemplateTarget.mockReset();
     getDeliveryTargetCapability.mockReset();
     copilotDeliver.mockReset();
+    clipboardDeliver.mockReset();
     deliver.mockReset();
     lmApiDeliver.mockReset();
     getDiagnostics.mockReset();
@@ -130,6 +132,18 @@ describe('runTemplateService', () => {
       editorDeliveryAdapter: {
         deliver,
         target: 'editor',
+      },
+    }));
+
+    vi.doMock('../../../src/services/delivery/clipboardDelivery.js', () => ({
+      clipboardDeliveryAdapter: {
+        deliver: clipboardDeliver,
+        target: 'clipboard',
+      },
+      ClipboardDeliveryError: class MockClipboardDeliveryError extends Error {
+        constructor(readonly userMessage: string) {
+          super(userMessage);
+        }
       },
     }));
 
@@ -558,20 +572,48 @@ describe('runTemplateService', () => {
     });
   });
 
-  it('normalizes the default lm-api mode to execute before checking capability availability', async () => {
+  it('normalizes the default lm-api mode to execute before falling back from an unavailable runtime', async () => {
     const stencil = {
-      get: vi.fn(),
-      resolve: vi.fn(),
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
     };
-    getDeliveryTargetCapability.mockResolvedValue({
-      available: false,
-      implemented: true,
-      supportedChatModes: [],
-      supportedModes: ['execute'],
-      target: 'lm-api',
-      unavailableReason:
-        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'lm-api') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['execute'],
+          target: 'lm-api',
+          unavailableReason:
+            'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
     });
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -581,14 +623,18 @@ describe('runTemplateService', () => {
       workspace: workspace as never,
     });
 
-    expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
-    expect(stencil.get).not.toHaveBeenCalled();
     expect(outcome).toEqual({
-      deliveryTarget: 'lm-api',
-      kind: 'target-unavailable',
-      mode: 'execute',
-      reason:
-        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+      delivery: {
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
+      },
+      fallbackDeliveryTarget: 'clipboard',
+      fallbackReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available. Copied the resolved prompt to clipboard instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'lm-api',
+      templateName: 'alpha',
     });
   });
 
@@ -623,20 +669,48 @@ describe('runTemplateService', () => {
     });
   });
 
-  it('returns target-unavailable when lm-api is implemented but no runtime support exists', async () => {
+  it('falls back to the clipboard when lm-api is implemented but no runtime support exists', async () => {
     const stencil = {
-      get: vi.fn(),
-      resolve: vi.fn(),
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
     };
-    getDeliveryTargetCapability.mockResolvedValue({
-      available: false,
-      implemented: true,
-      supportedChatModes: [],
-      supportedModes: ['execute'],
-      target: 'lm-api',
-      unavailableReason:
-        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'lm-api') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['execute'],
+          target: 'lm-api',
+          unavailableReason:
+            'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
     });
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -646,14 +720,18 @@ describe('runTemplateService', () => {
       workspace: workspace as never,
     });
 
-    expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
-    expect(stencil.get).not.toHaveBeenCalled();
     expect(outcome).toEqual({
-      deliveryTarget: 'lm-api',
-      kind: 'target-unavailable',
-      mode: 'execute',
-      reason:
-        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+      delivery: {
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
+      },
+      fallbackDeliveryTarget: 'clipboard',
+      fallbackReason:
+        'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available. Copied the resolved prompt to clipboard instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'lm-api',
+      templateName: 'alpha',
     });
   });
 
@@ -813,7 +891,79 @@ describe('runTemplateService', () => {
     });
   });
 
-  it('surfaces a typed lm-api delivery failure without falling back', async () => {
+  it('falls back to the clipboard after a typed lm-api delivery failure', async () => {
+    const resolve = vi.fn().mockResolvedValue({
+      inputs: [],
+      placeholders: [],
+      resolvedBody: '# Prompt',
+      unresolvedCount: 0,
+    });
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve,
+    };
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'lm-api') {
+        return {
+          available: true,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['execute'],
+          target: 'lm-api',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    lmApiDeliver.mockRejectedValue(
+      new MockLmApiDeliveryError(
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      ),
+    );
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(deliver).not.toHaveBeenCalled();
+    expect(copilotDeliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
+      },
+      fallbackDeliveryTarget: 'clipboard',
+      fallbackReason:
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again. Copied the resolved prompt to clipboard instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'lm-api',
+      templateName: 'alpha',
+    });
+  });
+
+  it('delivers the resolved prompt through the clipboard target when available', async () => {
     const resolve = vi.fn().mockResolvedValue({
       inputs: [],
       placeholders: [],
@@ -833,31 +983,172 @@ describe('runTemplateService', () => {
       available: true,
       implemented: true,
       supportedChatModes: [],
-      supportedModes: ['execute'],
-      target: 'lm-api',
+      supportedModes: ['default'],
+      target: 'clipboard',
     });
     resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
-    lmApiDeliver.mockRejectedValue(
-      new MockLmApiDeliveryError(
-        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
-      ),
-    );
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
       invocationSource: 'command-palette',
-      options: { deliveryTarget: 'lm-api' },
+      options: { deliveryTarget: 'clipboard' },
       stencil: stencil as never,
       workspace: workspace as never,
     });
 
-    expect(deliver).not.toHaveBeenCalled();
-    expect(copilotDeliver).not.toHaveBeenCalled();
+    expect(clipboardDeliver).toHaveBeenCalledWith({
+      chatMode: 'ask',
+      mode: 'default',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
     expect(outcome).toEqual({
-      deliveryTarget: 'lm-api',
-      kind: 'delivery-failed',
-      reason:
-        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      delivery: {
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+  });
+
+  it('falls back to the editor when clipboard delivery is requested without runtime support', async () => {
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
+    };
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'clipboard') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['default'],
+          target: 'clipboard',
+          unavailableReason: 'VS Code clipboard services are not available in the current runtime.',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'editor',
+      };
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'clipboard' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+        documentUri: { scheme: 'untitled' },
+      },
+      fallbackDeliveryTarget: 'editor',
+      fallbackReason:
+        'VS Code clipboard services are not available in the current runtime. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'clipboard',
+      templateName: 'alpha',
+    });
+  });
+
+  it('returns mode-unavailable when clipboard delivery is invoked with an unsupported mode', async () => {
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['default'],
+      target: 'clipboard',
+    });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'clipboard', mode: 'insert' },
+      stencil: { get: vi.fn(), resolve: vi.fn() } as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      deliveryTarget: 'clipboard',
+      kind: 'mode-unavailable',
+      mode: 'insert',
+      supportedModes: ['default'],
+    });
+  });
+
+  it('falls back from clipboard to the editor when clipboard delivery throws', async () => {
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
+    };
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => ({
+      available: true,
+      implemented: true,
+      supportedChatModes: [],
+      supportedModes: ['default'],
+      target,
+    }));
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    clipboardDeliver.mockRejectedValue(new Error('clipboard blocked'));
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'clipboard' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(outcome).toEqual({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+        documentUri: { scheme: 'untitled' },
+      },
+      fallbackDeliveryTarget: 'editor',
+      fallbackReason:
+        'Stencil could not deliver template "alpha" to clipboard: clipboard blocked Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'clipboard',
       templateName: 'alpha',
     });
   });
@@ -1269,7 +1560,7 @@ describe('runTemplateService', () => {
     expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
   });
 
-  it('falls back to the editor when the requested Copilot chat mode is unsupported', async () => {
+  it('falls back to the clipboard when the requested Copilot chat mode is unsupported', async () => {
     const resolve = vi.fn().mockResolvedValue({
       inputs: [],
       placeholders: [],
@@ -1285,14 +1576,31 @@ describe('runTemplateService', () => {
       }),
       resolve,
     };
-    getDeliveryTargetCapability.mockResolvedValue({
-      available: true,
-      implemented: true,
-      supportedChatModes: ['ask'],
-      supportedModes: ['default', 'insert', 'send'],
-      target: 'copilot-chat',
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'copilot-chat') {
+        return {
+          available: true,
+          implemented: true,
+          supportedChatModes: ['ask'],
+          supportedModes: ['default', 'insert', 'send'],
+          target: 'copilot-chat',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
     });
     resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -1304,18 +1612,18 @@ describe('runTemplateService', () => {
 
     expect(outcome).toEqual({
       delivery: {
-        deliveryActionLabel: 'opened',
-        deliveryTarget: 'editor',
-        deliveryTargetLabel: 'new editor',
-        documentUri: { scheme: 'untitled' },
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
       },
+      fallbackDeliveryTarget: 'clipboard',
       fallbackReason:
-        'Copilot Chat mode "agent" is unavailable in the current runtime. Opened the resolved prompt in a new editor instead.',
+        'Copilot Chat mode "agent" is unavailable in the current runtime. Copied the resolved prompt to clipboard instead.',
       kind: 'completed-with-fallback',
       requestedDeliveryTarget: 'copilot-chat',
       templateName: 'alpha',
     });
-    expect(deliver).toHaveBeenCalledWith({
+    expect(clipboardDeliver).toHaveBeenCalledWith({
       chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Prompt',
@@ -1404,7 +1712,7 @@ describe('runTemplateService', () => {
     expect(resolveRunTemplateTarget).not.toHaveBeenCalled();
   });
 
-  it('falls back to the editor when Copilot Chat is unavailable', async () => {
+  it('falls back to the clipboard when Copilot Chat is unavailable', async () => {
     const resolve = vi.fn().mockResolvedValue({
       inputs: [],
       placeholders: [],
@@ -1420,16 +1728,33 @@ describe('runTemplateService', () => {
       }),
       resolve,
     };
-    getDeliveryTargetCapability.mockResolvedValue({
-      available: false,
-      implemented: true,
-      supportedChatModes: ['ask', 'edit', 'agent'],
-      supportedModes: ['default', 'insert', 'send'],
-      target: 'copilot-chat',
-      unavailableReason:
-        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'copilot-chat') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: ['ask', 'edit', 'agent'],
+          supportedModes: ['default', 'insert', 'send'],
+          target: 'copilot-chat',
+          unavailableReason:
+            'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open.',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
     });
     resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -1441,18 +1766,18 @@ describe('runTemplateService', () => {
 
     expect(outcome).toEqual({
       delivery: {
-        deliveryActionLabel: 'opened',
-        deliveryTarget: 'editor',
-        deliveryTargetLabel: 'new editor',
-        documentUri: { scheme: 'untitled' },
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
       },
+      fallbackDeliveryTarget: 'clipboard',
       fallbackReason:
-        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open. Opened the resolved prompt in a new editor instead.',
+        'Copilot Chat is unavailable because VS Code did not expose workbench.action.chat.open. Copied the resolved prompt to clipboard instead.',
       kind: 'completed-with-fallback',
       requestedDeliveryTarget: 'copilot-chat',
       templateName: 'alpha',
     });
-    expect(deliver).toHaveBeenCalledWith({
+    expect(clipboardDeliver).toHaveBeenCalledWith({
       chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Prompt',
@@ -1461,7 +1786,7 @@ describe('runTemplateService', () => {
     expect(copilotDeliver).not.toHaveBeenCalled();
   });
 
-  it('falls back to the editor when Copilot command execution throws', async () => {
+  it('falls back to the clipboard when Copilot command execution throws', async () => {
     const resolve = vi.fn().mockResolvedValue({
       inputs: [],
       placeholders: [],
@@ -1477,15 +1802,32 @@ describe('runTemplateService', () => {
       }),
       resolve,
     };
-    getDeliveryTargetCapability.mockResolvedValue({
-      available: true,
-      implemented: true,
-      supportedChatModes: ['ask', 'edit', 'agent'],
-      supportedModes: ['default', 'insert', 'send'],
-      target: 'copilot-chat',
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'copilot-chat') {
+        return {
+          available: true,
+          implemented: true,
+          supportedChatModes: ['ask', 'edit', 'agent'],
+          supportedModes: ['default', 'insert', 'send'],
+          target: 'copilot-chat',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      };
     });
     copilotDeliver.mockRejectedValue(new Error('chat open failed'));
     resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    clipboardDeliver.mockResolvedValue({
+      deliveryActionLabel: 'copied',
+      deliveryTarget: 'clipboard',
+      deliveryTargetLabel: 'clipboard',
+    });
 
     const { runTemplate } = await import('../../../src/services/runTemplateService.js');
     const outcome = await runTemplate({
@@ -1497,18 +1839,18 @@ describe('runTemplateService', () => {
 
     expect(outcome).toEqual({
       delivery: {
-        deliveryActionLabel: 'opened',
-        deliveryTarget: 'editor',
-        deliveryTargetLabel: 'new editor',
-        documentUri: { scheme: 'untitled' },
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
       },
+      fallbackDeliveryTarget: 'clipboard',
       fallbackReason:
-        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+        'Copilot Chat failed: chat open failed. Copied the resolved prompt to clipboard instead.',
       kind: 'completed-with-fallback',
       requestedDeliveryTarget: 'copilot-chat',
       templateName: 'alpha',
     });
-    expect(deliver).toHaveBeenCalledWith({
+    expect(clipboardDeliver).toHaveBeenCalledWith({
       chatMode: 'ask',
       mode: 'default',
       resolvedBody: '# Prompt',
@@ -1569,11 +1911,11 @@ describe('runTemplateService', () => {
 
     expect(showInformationMessage).toHaveBeenNthCalledWith(
       1,
-      'Stencil run target "copilot-chat" is not supported yet.',
+      'Stencil run target "Copilot Chat" is not supported yet.',
     );
     expect(showInformationMessage).toHaveBeenNthCalledWith(
       2,
-      'Stencil run mode "send" is unavailable for target "copilot-chat". Supported modes: default.',
+      'Stencil run mode "send" is unavailable for target "Copilot Chat". Supported modes: default.',
     );
     expect(showInformationMessage).toHaveBeenNthCalledWith(
       3,
@@ -1593,7 +1935,7 @@ describe('runTemplateService', () => {
     });
 
     expect(showInformationMessage).toHaveBeenCalledWith(
-      'Stencil chat mode "agent" is unavailable for target "copilot-chat". Supported chat modes: ask.',
+      'Stencil chat mode "agent" is unavailable for target "Copilot Chat". Supported chat modes: ask.',
     );
   });
 
@@ -1603,19 +1945,20 @@ describe('runTemplateService', () => {
 
     await showRunTemplateOutcomeMessage({
       delivery: {
-        deliveryActionLabel: 'opened',
-        deliveryTarget: 'editor',
-        deliveryTargetLabel: 'new editor',
+        deliveryActionLabel: 'copied',
+        deliveryTarget: 'clipboard',
+        deliveryTargetLabel: 'clipboard',
       },
+      fallbackDeliveryTarget: 'clipboard',
       fallbackReason:
-        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+        'Copilot Chat failed: chat open failed. Copied the resolved prompt to clipboard instead.',
       kind: 'completed-with-fallback',
       requestedDeliveryTarget: 'copilot-chat',
       templateName: 'alpha',
     });
 
     expect(showInformationMessage).toHaveBeenCalledWith(
-      'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+      'Copilot Chat failed: chat open failed. Copied the resolved prompt to clipboard instead.',
     );
   });
 
@@ -1649,6 +1992,25 @@ describe('runTemplateService', () => {
     expect(showInformationMessage).toHaveBeenNthCalledWith(
       2,
       'Ran "beta". Sent resolved prompt in Copilot Chat.',
+    );
+  });
+
+  it('reports editor completion outcomes through the shared message formatter', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+      },
+      kind: 'completed',
+      templateName: 'alpha',
+    });
+
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      'Ran "alpha". Opened resolved prompt in new editor.',
     );
   });
 

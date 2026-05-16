@@ -30,9 +30,9 @@ export async function getDeliveryTargetCapability(
     case 'clipboard':
       return {
         available: typeof vscode.env?.clipboard?.writeText === 'function',
-        implemented: false,
+        implemented: true,
         supportedChatModes: [],
-        supportedModes: ['default', 'insert'],
+        supportedModes: ['default'],
         target,
         unavailableReason: 'VS Code clipboard services are not available in the current runtime.',
       };

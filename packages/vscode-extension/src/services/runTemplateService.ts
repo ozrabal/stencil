@@ -4,6 +4,7 @@ import type { RunTemplateDeliveryAdapter, RunTemplateDeliveryResult } from './de
 
 import { StencilError, StencilErrorCode } from '../core/index.js';
 import { getDeliveryTargetCapability } from './delivery/capabilities.js';
+import { clipboardDeliveryAdapter, ClipboardDeliveryError } from './delivery/clipboardDelivery.js';
 import { copilotChatDeliveryAdapter } from './delivery/copilotChatDelivery.js';
 import { editorDeliveryAdapter } from './delivery/editorDelivery.js';
 import {
@@ -42,6 +43,7 @@ export interface RunTemplateCompletedOutcome {
 
 export interface RunTemplateCompletedWithFallbackOutcome {
   delivery: RunTemplateDeliveryResult;
+  fallbackDeliveryTarget: RunTemplateDeliveryTarget;
   fallbackReason: string;
   kind: 'completed-with-fallback';
   requestedDeliveryTarget: RunTemplateDeliveryTarget;
@@ -120,8 +122,8 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
     };
   }
 
-  const shouldAttemptCopilotFallback = options.deliveryTarget === 'copilot-chat';
-  if (!shouldAttemptCopilotFallback && !capability.available) {
+  const fallbackTargets = getFallbackTargets(options.deliveryTarget);
+  if (!capability.available && fallbackTargets.length === 0) {
     return {
       deliveryTarget: options.deliveryTarget,
       kind: 'target-unavailable',
@@ -164,8 +166,9 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
   }
 
   if (unsupportedChatMode !== undefined) {
-    return attemptEditorFallback({
-      reason: `Copilot Chat mode "${unsupportedChatMode.chatMode}" is unavailable in the current runtime. Opened the resolved prompt in a new editor instead.`,
+    return attemptFallbackDelivery({
+      fallbackTargets,
+      primaryFailureMessage: `Copilot Chat mode "${unsupportedChatMode.chatMode}" is unavailable in the current runtime.`,
       requestedDeliveryTarget: options.deliveryTarget,
       resolvedBody: resolvedTemplate.resolvedBody,
       templateName,
@@ -173,13 +176,22 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
   }
 
   if (!capability.available) {
-    const fallbackReason =
-      capability.unavailableReason !== undefined
-        ? `${capability.unavailableReason} Opened the resolved prompt in a new editor instead.`
-        : 'Copilot Chat is unavailable in the current runtime. Opened the resolved prompt in a new editor instead.';
+    if (fallbackTargets.length === 0) {
+      return {
+        deliveryTarget: options.deliveryTarget,
+        kind: 'target-unavailable',
+        mode: options.mode,
+        ...(capability.unavailableReason !== undefined
+          ? { reason: capability.unavailableReason }
+          : {}),
+      };
+    }
 
-    return attemptEditorFallback({
-      reason: fallbackReason,
+    return attemptFallbackDelivery({
+      fallbackTargets,
+      primaryFailureMessage:
+        capability.unavailableReason ??
+        `Stencil run target "${formatDeliveryTargetLabel(options.deliveryTarget)}" is unavailable in the current runtime.`,
       requestedDeliveryTarget: options.deliveryTarget,
       resolvedBody: resolvedTemplate.resolvedBody,
       templateName,
@@ -209,20 +221,22 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
       };
     }
 
-    if (options.deliveryTarget !== 'copilot-chat') {
+    if (fallbackTargets.length === 0) {
       return {
         deliveryTarget: options.deliveryTarget,
         kind: 'delivery-failed',
-        reason:
-          error instanceof LmApiDeliveryError
-            ? error.userMessage
-            : `Stencil could not deliver template "${templateName}": ${getUnknownErrorMessage(error)}`,
+        reason: getDeliveryFailureMessage(options.deliveryTarget, templateName, error),
         templateName,
       };
     }
 
-    return attemptEditorFallback({
-      reason: `Copilot Chat failed: ${getUnknownErrorMessage(error)}. Opened the resolved prompt in a new editor instead.`,
+    return attemptFallbackDelivery({
+      fallbackTargets,
+      primaryFailureMessage: getPrimaryDeliveryFailureMessage(
+        options.deliveryTarget,
+        templateName,
+        error,
+      ),
       requestedDeliveryTarget: options.deliveryTarget,
       resolvedBody: resolvedTemplate.resolvedBody,
       templateName,
@@ -319,35 +333,59 @@ async function resolveTemplateForDelivery(
   return { resolvedBody: finalResult.resolvedBody };
 }
 
-async function attemptEditorFallback(options: {
-  reason: string;
+async function attemptFallbackDelivery(options: {
+  fallbackTargets: RunTemplateDeliveryTarget[];
+  primaryFailureMessage: string;
   requestedDeliveryTarget: RunTemplateDeliveryTarget;
   resolvedBody: string;
   templateName: string;
 }): Promise<RunTemplateCompletedWithFallbackOutcome | RunTemplateDeliveryFailedOutcome> {
-  try {
-    const delivery = await editorDeliveryAdapter.deliver({
-      chatMode: 'ask',
-      mode: 'default',
-      resolvedBody: options.resolvedBody,
-      templateName: options.templateName,
-    });
+  const fallbackFailures: string[] = [];
 
-    return {
-      delivery,
-      fallbackReason: options.reason,
-      kind: 'completed-with-fallback',
-      requestedDeliveryTarget: options.requestedDeliveryTarget,
-      templateName: options.templateName,
-    };
-  } catch (error) {
-    return {
-      deliveryTarget: options.requestedDeliveryTarget,
-      kind: 'delivery-failed',
-      reason: `${options.reason} Editor fallback also failed: ${getUnknownErrorMessage(error)}`,
-      templateName: options.templateName,
-    };
+  for (const fallbackTarget of options.fallbackTargets) {
+    const capability = await getDeliveryTargetCapability(fallbackTarget);
+    if (!capability.implemented) {
+      fallbackFailures.push(
+        `${capitalize(formatDeliveryTargetLabel(fallbackTarget))} fallback is not supported in this extension build.`,
+      );
+      continue;
+    }
+
+    if (!capability.available) {
+      fallbackFailures.push(
+        capability.unavailableReason ??
+          `${capitalize(formatDeliveryTargetLabel(fallbackTarget))} fallback is unavailable in the current runtime.`,
+      );
+      continue;
+    }
+
+    try {
+      const delivery = await getDeliveryAdapter(fallbackTarget).deliver({
+        chatMode: 'ask',
+        mode: 'default',
+        resolvedBody: options.resolvedBody,
+        templateName: options.templateName,
+      });
+
+      return {
+        delivery,
+        fallbackDeliveryTarget: fallbackTarget,
+        fallbackReason: buildFallbackSuccessMessage(options.primaryFailureMessage, delivery),
+        kind: 'completed-with-fallback',
+        requestedDeliveryTarget: options.requestedDeliveryTarget,
+        templateName: options.templateName,
+      };
+    } catch (error) {
+      fallbackFailures.push(getFallbackFailureMessage(fallbackTarget, options.templateName, error));
+    }
   }
+
+  return {
+    deliveryTarget: options.requestedDeliveryTarget,
+    kind: 'delivery-failed',
+    reason: [options.primaryFailureMessage, ...fallbackFailures].join(' '),
+    templateName: options.templateName,
+  };
 }
 
 function capitalize(value: string): string {
@@ -356,24 +394,91 @@ function capitalize(value: string): string {
 
 function getDeliveryAdapter(deliveryTarget: RunTemplateDeliveryTarget): RunTemplateDeliveryAdapter {
   switch (deliveryTarget) {
+    case 'clipboard':
+      return clipboardDeliveryAdapter;
     case 'copilot-chat':
       return copilotChatDeliveryAdapter;
     case 'editor':
       return editorDeliveryAdapter;
     case 'lm-api':
       return lmApiDeliveryAdapter;
-    default:
-      throw new Error(`No delivery adapter is registered for "${deliveryTarget}".`);
   }
+
+  return assertUnreachable(deliveryTarget);
+}
+
+function getFallbackTargets(
+  deliveryTarget: RunTemplateDeliveryTarget,
+): RunTemplateDeliveryTarget[] {
+  switch (deliveryTarget) {
+    case 'clipboard':
+      return ['editor'];
+    case 'copilot-chat':
+    case 'lm-api':
+      return ['clipboard', 'editor'];
+    case 'editor':
+      return [];
+  }
+}
+
+function getPrimaryDeliveryFailureMessage(
+  deliveryTarget: RunTemplateDeliveryTarget,
+  templateName: string,
+  error: unknown,
+): string {
+  switch (deliveryTarget) {
+    case 'copilot-chat':
+      return `Copilot Chat failed: ${getUnknownErrorMessage(error)}.`;
+    default:
+      return getDeliveryFailureMessage(deliveryTarget, templateName, error);
+  }
+}
+
+function getDeliveryFailureMessage(
+  deliveryTarget: RunTemplateDeliveryTarget,
+  templateName: string,
+  error: unknown,
+): string {
+  if (error instanceof ClipboardDeliveryError || error instanceof LmApiDeliveryError) {
+    return error.userMessage;
+  }
+
+  return `Stencil could not deliver template "${templateName}" to ${formatDeliveryTargetLabel(deliveryTarget)}: ${getUnknownErrorMessage(error)}`;
+}
+
+function getFallbackFailureMessage(
+  deliveryTarget: RunTemplateDeliveryTarget,
+  templateName: string,
+  error: unknown,
+): string {
+  return `${capitalize(formatDeliveryTargetLabel(deliveryTarget))} fallback failed: ${getDeliveryFailureMessage(deliveryTarget, templateName, error)}`;
+}
+
+function buildFallbackSuccessMessage(
+  primaryFailureMessage: string,
+  delivery: RunTemplateDeliveryResult,
+): string {
+  const fallbackActionMessage =
+    delivery.deliveryTarget === 'clipboard'
+      ? `Copied the resolved prompt to ${delivery.deliveryTargetLabel} instead.`
+      : `Opened the resolved prompt in a ${delivery.deliveryTargetLabel} instead.`;
+
+  return `${primaryFailureMessage} ${fallbackActionMessage}`;
 }
 
 function formatDeliveryTargetLabel(deliveryTarget: RunTemplateDeliveryTarget): string {
   switch (deliveryTarget) {
+    case 'clipboard':
+      return 'clipboard';
     case 'copilot-chat':
-      return 'copilot-chat';
+      return 'Copilot Chat';
     case 'lm-api':
-      return 'lm-api';
+      return 'Stencil Language Model execution';
     default:
-      return deliveryTarget;
+      return 'editor';
   }
+}
+
+function assertUnreachable(value: never): never {
+  throw new Error(`Unexpected value: ${String(value)}`);
 }

@@ -78,15 +78,15 @@ describe('delivery capabilities', () => {
     });
   });
 
-  it('keeps clipboard delivery unimplemented while still probing runtime support', async () => {
+  it('reports clipboard delivery as available only when clipboard APIs exist', async () => {
     const { getDeliveryTargetCapability } =
       await import('../../../src/services/delivery/capabilities.js');
 
     await expect(getDeliveryTargetCapability('clipboard')).resolves.toMatchObject({
       available: false,
-      implemented: false,
+      implemented: true,
       supportedChatModes: [],
-      supportedModes: ['default', 'insert'],
+      supportedModes: ['default'],
       target: 'clipboard',
     });
 
@@ -94,9 +94,9 @@ describe('delivery capabilities', () => {
 
     await expect(getDeliveryTargetCapability('clipboard')).resolves.toMatchObject({
       available: true,
-      implemented: false,
+      implemented: true,
       supportedChatModes: [],
-      supportedModes: ['default', 'insert'],
+      supportedModes: ['default'],
       target: 'clipboard',
     });
   });

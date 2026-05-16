@@ -27,7 +27,7 @@ export interface RunPreferenceConfiguration {
 
 const RUN_CONFIGURATION_SECTION = 'stencil.run';
 
-const DELIVERY_TARGET_VALUES = ['editor', 'copilot-chat', 'lm-api'] as const;
+const DELIVERY_TARGET_VALUES = ['editor', 'copilot-chat', 'lm-api', 'clipboard'] as const;
 const MODE_VALUES = ['default', 'execute', 'insert', 'send'] as const;
 const CHAT_MODE_VALUES = ['agent', 'ask', 'edit'] as const;
 const SELECTION_BEHAVIOR_VALUES = ['defaults', 'last-used', 'picker'] as const;
@@ -80,6 +80,17 @@ export async function normalizeRunProfile(
   const chatMode = profile.chatMode ?? DEFAULT_CHAT_MODE;
 
   switch (deliveryTarget) {
+    case 'clipboard':
+      if (mode !== 'default') {
+        warnings.push(
+          `${formatWarningSource(source)} requested mode "${mode}" is invalid for target "clipboard"; using "default".`,
+        );
+      }
+      return {
+        chatMode: DEFAULT_CHAT_MODE,
+        deliveryTarget,
+        mode: 'default',
+      };
     case 'copilot-chat': {
       const capability = await getDeliveryTargetCapability('copilot-chat');
       const normalizedMode = mode === 'default' ? 'insert' : mode;

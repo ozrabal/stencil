@@ -23,6 +23,13 @@ describe('pickRunProfile', () => {
 
   it('omits unavailable Copilot and LM entries', async () => {
     mockCapabilities({
+      clipboard: {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
       'copilot-chat': {
         available: false,
         implemented: true,
@@ -65,6 +72,13 @@ describe('pickRunProfile', () => {
 
   it('lists insert and send entries when Copilot only supports ask', async () => {
     mockCapabilities({
+      clipboard: {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
       'copilot-chat': {
         available: true,
         implemented: true,
@@ -94,6 +108,7 @@ describe('pickRunProfile', () => {
 
     expect(showQuickPick.mock.calls[0]?.[0]).toEqual([
       expect.objectContaining({ label: 'Editor' }),
+      expect.objectContaining({ label: 'Clipboard' }),
       expect.objectContaining({ label: 'Copilot Chat' }),
       expect.objectContaining({ label: 'Copilot Chat (Send)' }),
     ]);
@@ -101,6 +116,13 @@ describe('pickRunProfile', () => {
 
   it('adds chat-mode entries when Copilot supports ask, edit, and agent', async () => {
     mockCapabilities({
+      clipboard: {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
       'copilot-chat': {
         available: true,
         implemented: true,
@@ -130,6 +152,7 @@ describe('pickRunProfile', () => {
 
     expect(showQuickPick.mock.calls[0]?.[0]).toEqual([
       expect.objectContaining({ label: 'Editor' }),
+      expect.objectContaining({ label: 'Clipboard' }),
       expect.objectContaining({ label: 'Copilot Chat' }),
       expect.objectContaining({ label: 'Copilot Chat (Send)' }),
       expect.objectContaining({ label: 'Copilot Chat: Ask' }),
@@ -140,6 +163,13 @@ describe('pickRunProfile', () => {
 
   it('includes the language model entry only when the target is available', async () => {
     mockCapabilities({
+      clipboard: {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
       'copilot-chat': {
         available: false,
         implemented: true,
@@ -181,6 +211,13 @@ describe('pickRunProfile', () => {
 
   it('returns undefined when the picker is cancelled', async () => {
     mockCapabilities({
+      clipboard: {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
       'copilot-chat': {
         available: false,
         implemented: true,
@@ -207,6 +244,54 @@ describe('pickRunProfile', () => {
 
     const { pickRunProfile } = await import('../../../src/services/runProfilePicker.js');
     await expect(pickRunProfile()).resolves.toBeUndefined();
+  });
+
+  it('returns a clipboard profile when the clipboard entry is selected', async () => {
+    mockCapabilities({
+      clipboard: {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
+      'copilot-chat': {
+        available: false,
+        implemented: true,
+        supportedChatModes: ['ask'],
+        supportedModes: ['default', 'insert', 'send'],
+        target: 'copilot-chat',
+      },
+      editor: {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'editor',
+      },
+      'lm-api': {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['execute'],
+        target: 'lm-api',
+      },
+    });
+    showQuickPick.mockResolvedValue({
+      label: 'Clipboard',
+      profile: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
+      },
+    });
+
+    const { pickRunProfile } = await import('../../../src/services/runProfilePicker.js');
+    await expect(pickRunProfile()).resolves.toEqual({
+      chatMode: 'ask',
+      deliveryTarget: 'clipboard',
+      mode: 'default',
+    });
   });
 
   function mockCapabilities(capabilities: Record<string, Record<string, unknown>>): void {

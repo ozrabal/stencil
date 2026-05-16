@@ -11,6 +11,7 @@ import {
   RUN_TEMPLATE_IN_COPILOT_CHAT_COMMAND_ID,
   RUN_TEMPLATE_IN_COPILOT_CHAT_SEND_COMMAND_ID,
   RUN_TEMPLATE_IN_EDITOR_COMMAND_ID,
+  RUN_TEMPLATE_TO_CLIPBOARD_COMMAND_ID,
   RUN_TEMPLATE_WITH_LANGUAGE_MODEL_COMMAND_ID,
   RUN_TEMPLATE_WITH_MODE_COMMAND_ID,
 } from './commands/runTemplate.js';
@@ -37,6 +38,15 @@ export function activate(context: vscode.ExtensionContext): void {
       RUN_TEMPLATE_IN_EDITOR_COMMAND_ID,
       {
         deliveryTarget: 'editor',
+      },
+      {
+        preferenceStore: runPreferenceStore,
+      },
+    ),
+    registerRunTemplateCommand(
+      RUN_TEMPLATE_TO_CLIPBOARD_COMMAND_ID,
+      {
+        deliveryTarget: 'clipboard',
       },
       {
         preferenceStore: runPreferenceStore,

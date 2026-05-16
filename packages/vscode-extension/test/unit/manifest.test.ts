@@ -37,6 +37,7 @@ describe('package contributions', () => {
       'onCommand:stencil.runTemplate',
       'onCommand:stencil.runTemplateWithMode',
       'onCommand:stencil.runTemplateInEditor',
+      'onCommand:stencil.runTemplateToClipboard',
       'onCommand:stencil.runTemplateInCopilotChat',
       'onCommand:stencil.runTemplateInCopilotChatSend',
       'onCommand:stencil.runTemplateWithLanguageModel',
@@ -59,6 +60,10 @@ describe('package contributions', () => {
       {
         command: 'stencil.runTemplateInEditor',
         title: 'Stencil: Run Template in Editor',
+      },
+      {
+        command: 'stencil.runTemplateToClipboard',
+        title: 'Stencil: Run Template to Clipboard',
       },
       {
         command: 'stencil.runTemplateInCopilotChat',
@@ -114,6 +119,11 @@ describe('package contributions', () => {
           when: 'view == stencilTemplates && viewItem == stencil.template',
         },
         {
+          command: 'stencil.runTemplateToClipboard',
+          group: 'navigation',
+          when: 'view == stencilTemplates && viewItem == stencil.template',
+        },
+        {
           command: 'stencil.runTemplateInCopilotChat',
           group: 'navigation',
           when: 'view == stencilTemplates && viewItem == stencil.template',
@@ -154,7 +164,7 @@ describe('package contributions', () => {
         },
         'stencil.run.defaultTarget': {
           default: 'copilot-chat',
-          enum: ['editor', 'copilot-chat', 'lm-api'],
+          enum: ['editor', 'copilot-chat', 'lm-api', 'clipboard'],
           type: 'string',
         },
         'stencil.run.lastUsedScope': {

@@ -15,6 +15,7 @@
     "onCommand:stencil.runTemplate",
     "onCommand:stencil.runTemplateWithMode",
     "onCommand:stencil.runTemplateInEditor",
+    "onCommand:stencil.runTemplateToClipboard",
     "onCommand:stencil.runTemplateInCopilotChat",
     "onCommand:stencil.runTemplateInCopilotChatSend",
     "onCommand:stencil.runTemplateWithLanguageModel",
@@ -59,6 +60,10 @@
         "title": "Stencil: Run Template in Editor"
       },
       {
+        "command": "stencil.runTemplateToClipboard",
+        "title": "Stencil: Run Template to Clipboard"
+      },
+      {
         "command": "stencil.runTemplateInCopilotChat",
         "title": "Stencil: Run Template in Copilot Chat"
       },
@@ -100,7 +105,8 @@
           "enum": [
             "editor",
             "copilot-chat",
-            "lm-api"
+            "lm-api",
+            "clipboard"
           ],
           "default": "copilot-chat",
           "markdownDescription": "Default delivery target for `Stencil: Run Template` when no per-run selection behavior overrides it."
@@ -167,6 +173,11 @@
         },
         {
           "command": "stencil.runTemplateInEditor",
+          "group": "navigation",
+          "when": "view == stencilTemplates && viewItem == stencil.template"
+        },
+        {
+          "command": "stencil.runTemplateToClipboard",
           "group": "navigation",
           "when": "view == stencilTemplates && viewItem == stencil.template"
         },

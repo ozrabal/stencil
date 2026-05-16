@@ -99,6 +99,25 @@ describe('runConfiguration', () => {
     ]);
   });
 
+  it('normalizes clipboard defaults to default mode without capability lookups', async () => {
+    mockStencilRunSettings({
+      'run.defaultMode': 'default',
+      'run.defaultTarget': 'clipboard',
+    });
+
+    const { getResolvedRunConfiguration } =
+      await import('../../../src/services/runConfiguration.js');
+    const result = await getResolvedRunConfiguration();
+
+    expect(result.defaultProfile).toEqual({
+      chatMode: 'ask',
+      deliveryTarget: 'clipboard',
+      mode: 'default',
+    });
+    expect(result.warnings).toEqual([]);
+    expect(getDeliveryTargetCapability).not.toHaveBeenCalled();
+  });
+
   it('normalizes invalid target-mode combinations to safe defaults', async () => {
     mockStencilRunSettings({
       'run.defaultMode': 'send',
@@ -168,7 +187,7 @@ describe('runConfiguration', () => {
     expect(result.lastUsedScope).toBe('session');
     expect(result.selectionBehavior).toBe('defaults');
     expect(result.warnings).toEqual([
-      'Stencil stencil.run.defaultTarget must be one of: editor, copilot-chat, lm-api. Using "copilot-chat".',
+      'Stencil stencil.run.defaultTarget must be one of: editor, copilot-chat, lm-api, clipboard. Using "copilot-chat".',
       'Stencil stencil.run.defaultMode must be one of: default, execute, insert, send. Using "default".',
       'Stencil stencil.run.defaultChatMode must be one of: agent, ask, edit. Using "ask".',
       'Stencil stencil.run.lastUsedScope must be one of: global, session, workspace. Using "session".',

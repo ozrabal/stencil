@@ -9,11 +9,13 @@ interface RunProfileQuickPickItem extends vscode.QuickPickItem {
 }
 
 export async function pickRunProfile(): Promise<RunTemplateExecutionOptions | undefined> {
-  const [editorCapability, copilotCapability, languageModelCapability] = await Promise.all([
-    getDeliveryTargetCapability('editor'),
-    getDeliveryTargetCapability('copilot-chat'),
-    getDeliveryTargetCapability('lm-api'),
-  ]);
+  const [editorCapability, clipboardCapability, copilotCapability, languageModelCapability] =
+    await Promise.all([
+      getDeliveryTargetCapability('editor'),
+      getDeliveryTargetCapability('clipboard'),
+      getDeliveryTargetCapability('copilot-chat'),
+      getDeliveryTargetCapability('lm-api'),
+    ]);
 
   const items: RunProfileQuickPickItem[] = [];
 
@@ -24,6 +26,18 @@ export async function pickRunProfile(): Promise<RunTemplateExecutionOptions | un
       profile: {
         chatMode: 'ask',
         deliveryTarget: 'editor',
+        mode: 'default',
+      },
+    });
+  }
+
+  if (clipboardCapability.available && clipboardCapability.implemented) {
+    items.push({
+      description: 'Copy the resolved prompt to the clipboard',
+      label: 'Clipboard',
+      profile: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
         mode: 'default',
       },
     });

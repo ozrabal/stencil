@@ -206,6 +206,67 @@ describe('registerRunTemplateCommand', () => {
     expect(showRunTemplateOutcomeMessage).not.toHaveBeenCalled();
   });
 
+  it('surfaces service-owned fallback outcomes unchanged from the default command', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+    runTemplate.mockResolvedValue({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+      },
+      fallbackReason:
+        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+
+    const callback = await registerCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(showRunTemplateOutcomeMessage).toHaveBeenCalledWith({
+      delivery: {
+        deliveryActionLabel: 'opened',
+        deliveryTarget: 'editor',
+        deliveryTargetLabel: 'new editor',
+      },
+      fallbackReason:
+        'Copilot Chat failed: chat open failed. Opened the resolved prompt in a new editor instead.',
+      kind: 'completed-with-fallback',
+      requestedDeliveryTarget: 'copilot-chat',
+      templateName: 'alpha',
+    });
+  });
+
+  it('surfaces service-owned delivery failures unchanged from explicit command paths', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+    runTemplate.mockResolvedValue({
+      deliveryTarget: 'lm-api',
+      kind: 'delivery-failed',
+      reason:
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      templateName: 'alpha',
+    });
+
+    const callback = await registerCommandAndGetCallback(
+      {
+        deliveryTarget: 'lm-api',
+      },
+      'stencil.runTemplateWithLanguageModel',
+    );
+    await callback('alpha');
+
+    expect(showRunTemplateOutcomeMessage).toHaveBeenCalledWith({
+      deliveryTarget: 'lm-api',
+      kind: 'delivery-failed',
+      reason:
+        'Stencil Language Model execution is blocked for the selected model. Check provider access or quota and try again.',
+      templateName: 'alpha',
+    });
+  });
+
   it('uses the picker-selected profile for the default command when configured', async () => {
     const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
     const preferenceStore = createPreferenceStore();
@@ -248,6 +309,36 @@ describe('registerRunTemplateCommand', () => {
       chatMode: 'ask',
       deliveryTarget: 'lm-api',
       mode: 'execute',
+    });
+  });
+
+  it('uses a clipboard default profile from configuration without further normalization', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
+      },
+      lastUsedScope: 'session',
+      selectionBehavior: 'defaults',
+      warnings: [],
+    });
+
+    const callback = await registerCommandAndGetCallback();
+    await callback('alpha');
+
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
     });
   });
 
@@ -358,6 +449,31 @@ describe('registerRunTemplateCommand', () => {
         chatMode: 'ask',
         deliveryTarget: 'copilot-chat',
         mode: 'insert',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+  });
+
+  it('registers the clipboard command with explicit clipboard options', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+
+    const callback = await registerCommandAndGetCallback(
+      {
+        deliveryTarget: 'clipboard',
+      },
+      'stencil.runTemplateToClipboard',
+    );
+    await callback('alpha');
+
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
       },
       requestedTarget: { templateName: 'alpha' },
       stencil,
