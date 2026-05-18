@@ -342,6 +342,41 @@ describe('registerRunTemplateCommand', () => {
     });
   });
 
+  it('falls back to the configured default profile when last-used selection has no stored profile', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    const preferenceStore = createPreferenceStore();
+    getStencil.mockReturnValue(stencil);
+    getResolvedRunConfiguration.mockResolvedValue({
+      defaultProfile: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
+      },
+      lastUsedScope: 'workspace',
+      selectionBehavior: 'last-used',
+      warnings: [],
+    });
+
+    const callback = await registerCommandAndGetCallback(undefined, 'stencil.runTemplate', {
+      preferenceStore,
+    });
+    await callback('alpha');
+
+    expect(preferenceStore.getLastUsedProfile).toHaveBeenCalledWith('workspace');
+    expect(normalizeRunProfile).not.toHaveBeenCalled();
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'clipboard',
+        mode: 'default',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+  });
+
   it('skips the default command when the configured picker is cancelled', async () => {
     getResolvedRunConfiguration.mockResolvedValue({
       defaultProfile: {
@@ -365,7 +400,7 @@ describe('registerRunTemplateCommand', () => {
   it('reuses the last-used profile when configured and a stored profile exists', async () => {
     const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
     const preferenceStore = createPreferenceStore({
-      getLastUsedProfile: vi.fn().mockResolvedValue({
+      getLastUsedProfile: vi.fn().mockReturnValue({
         chatMode: 'edit',
         deliveryTarget: 'copilot-chat',
         mode: 'insert',
@@ -449,6 +484,31 @@ describe('registerRunTemplateCommand', () => {
         chatMode: 'ask',
         deliveryTarget: 'copilot-chat',
         mode: 'insert',
+      },
+      requestedTarget: { templateName: 'alpha' },
+      stencil,
+      workspace,
+    });
+  });
+
+  it('registers the editor command with explicit editor options', async () => {
+    const stencil = { get: vi.fn(), list: vi.fn(), resolve: vi.fn() };
+    getStencil.mockReturnValue(stencil);
+
+    const callback = await registerCommandAndGetCallback(
+      {
+        deliveryTarget: 'editor',
+      },
+      'stencil.runTemplateInEditor',
+    );
+    await callback('alpha');
+
+    expect(runTemplate).toHaveBeenCalledWith({
+      invocationSource: 'command-palette',
+      options: {
+        chatMode: 'ask',
+        deliveryTarget: 'editor',
+        mode: 'default',
       },
       requestedTarget: { templateName: 'alpha' },
       stencil,
@@ -754,7 +814,7 @@ describe('registerRunTemplateCommand', () => {
     }>,
   ) {
     return {
-      getLastUsedProfile: overrides?.getLastUsedProfile ?? vi.fn().mockResolvedValue(undefined),
+      getLastUsedProfile: overrides?.getLastUsedProfile ?? vi.fn().mockReturnValue(undefined),
       setLastUsedProfile: overrides?.setLastUsedProfile ?? vi.fn().mockResolvedValue(undefined),
     };
   }

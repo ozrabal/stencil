@@ -148,12 +148,12 @@ The run flow is split into explicit seams:
 The current supported state is:
 
 - `editor` delivery with `default` mode is supported end to end
+- `clipboard` delivery with `default` mode is supported end to end
 - `copilot-chat` delivery supports `insert` and `send`
 - `lm-api` delivery supports `execute`
 - Copilot chat modes are runtime-gated: `ask` is always supported, `edit` and `agent` require VS Code `1.100+`
 - LM API mode normalization maps `default` to `execute`
-- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, unavailable chat modes, LM cancellation, and Copilot fallback are normalized as typed run outcomes before messaging
-- `clipboard` remains reserved in the contract and is not implemented yet
+- recoverable exits such as picker cancellation, prompt cancellation, unresolved inputs, unsupported targets, unavailable chat modes, LM cancellation, and editor or clipboard fallbacks are normalized as typed run outcomes before messaging
 
 Current entrypoints all converge on the same request shape:
 
@@ -209,6 +209,12 @@ Current entrypoints all converge on the same request shape:
 - The LM response panel is a singleton webview with inline HTML, which avoids introducing a separate frontend toolchain or extra bundle during extension activation.
 
 ## Verification
+
+Test boundary:
+
+- Unit tests own orchestration, capability probing, profile normalization, request-shape checks, fallback messaging, and adapter-specific failure handling.
+- Smoke tests own real Extension Development Host activation plus deterministic editor and clipboard run flows against `test/fixtures/workspace-run-template/`.
+- Manual validation owns real Copilot Chat behavior, real LM provider behavior, streaming UX quality, and host-specific compatibility outside the isolated smoke runtime.
 
 ```bash
 pnpm --filter stencil-vscode typecheck

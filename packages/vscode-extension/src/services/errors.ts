@@ -39,5 +39,17 @@ export function getUserFacingErrorMessage(error: unknown): string {
 }
 
 export function getUnknownErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.length > 0) {
+    return error;
+  }
+
+  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint') {
+    return String(error);
+  }
+
+  return 'Unknown error';
 }

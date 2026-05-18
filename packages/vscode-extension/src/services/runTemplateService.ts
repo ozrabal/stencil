@@ -244,18 +244,19 @@ export async function runTemplate(request: RunTemplateRequest): Promise<RunTempl
   }
 }
 
-export async function showRunTemplateOutcomeMessage(outcome: RunTemplateOutcome): Promise<void> {
+export function showRunTemplateOutcomeMessage(outcome: RunTemplateOutcome): Promise<void> {
   if (outcome.kind === 'delivery-failed') {
-    await vscode.window.showErrorMessage(outcome.reason);
-    return;
+    void vscode.window.showErrorMessage(outcome.reason);
+    return Promise.resolve();
   }
 
   const message = getRunTemplateOutcomeMessage(outcome);
   if (message === undefined) {
-    return;
+    return Promise.resolve();
   }
 
-  await vscode.window.showInformationMessage(message);
+  void vscode.window.showInformationMessage(message);
+  return Promise.resolve();
 }
 
 function getRunTemplateOutcomeMessage(outcome: RunTemplateOutcome): string | undefined {

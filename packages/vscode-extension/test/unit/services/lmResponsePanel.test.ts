@@ -215,4 +215,56 @@ describe('lmResponsePanel', () => {
 
     expect(cancelHandler).toHaveBeenCalledTimes(1);
   });
+
+  it('publishes an error state and ignores later chunks after failure', async () => {
+    const { beginLmResponsePanelSession } =
+      await import('../../../src/services/lmResponsePanel.js');
+
+    const session = beginLmResponsePanelSession({
+      modelId: 'copilot-1',
+      modelLabel: 'Copilot Model',
+      promptText: '# Prompt',
+      templateName: 'alpha',
+    });
+
+    session.fail('provider blocked');
+    session.appendResponseChunk('ignored');
+
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      state: {
+        canCancel: false,
+        errorDetails: 'provider blocked',
+        modelId: 'copilot-1',
+        modelLabel: 'Copilot Model',
+        promptText: '# Prompt',
+        responseText: '',
+        status: 'error',
+        templateName: 'alpha',
+      },
+      type: 'stencil.lmResponsePanel.state',
+    });
+    expect(postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates a fresh panel after the previous one is disposed', async () => {
+    const { beginLmResponsePanelSession } =
+      await import('../../../src/services/lmResponsePanel.js');
+
+    beginLmResponsePanelSession({
+      modelId: 'copilot-1',
+      modelLabel: 'Copilot Model',
+      promptText: '# Prompt',
+      templateName: 'alpha',
+    });
+    onDidDisposeCallbacks[0]?.();
+
+    beginLmResponsePanelSession({
+      modelId: 'copilot-2',
+      modelLabel: 'Copilot Model 2',
+      promptText: '# Prompt 2',
+      templateName: 'beta',
+    });
+
+    expect(createWebviewPanel).toHaveBeenCalledTimes(2);
+  });
 });

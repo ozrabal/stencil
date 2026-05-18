@@ -196,6 +196,58 @@ describe('runConfiguration', () => {
     ]);
   });
 
+  it('normalizes last-used profiles with source-specific warnings', async () => {
+    getDeliveryTargetCapability.mockResolvedValue({
+      available: true,
+      implemented: true,
+      supportedChatModes: ['ask'],
+      supportedModes: ['default', 'insert', 'send'],
+      target: 'copilot-chat',
+    });
+
+    const { normalizeRunProfile } = await import('../../../src/services/runConfiguration.js');
+    const warnings: string[] = [];
+    const result = await normalizeRunProfile(
+      {
+        chatMode: 'agent',
+        deliveryTarget: 'copilot-chat',
+        mode: 'default',
+      },
+      warnings,
+      'last-used profile',
+    );
+
+    expect(result).toEqual({
+      chatMode: 'ask',
+      deliveryTarget: 'copilot-chat',
+      mode: 'insert',
+    });
+    expect(warnings).toEqual([
+      'Stencil last-used profile requested mode "default" for target "copilot-chat"; using "insert".',
+      'Stencil last-used profile requested chat mode "agent" is unavailable for target "copilot-chat"; using "ask".',
+    ]);
+  });
+
+  it('reads preference-only settings with the same enum validation rules', async () => {
+    mockStencilRunSettings({
+      'run.lastUsedScope': 'invalid',
+      'run.selectionBehavior': 'invalid',
+    });
+
+    const { getRunPreferenceConfiguration } =
+      await import('../../../src/services/runConfiguration.js');
+    const result = getRunPreferenceConfiguration();
+
+    expect(result).toEqual({
+      lastUsedScope: 'session',
+      selectionBehavior: 'defaults',
+      warnings: [
+        'Stencil stencil.run.lastUsedScope must be one of: global, session, workspace. Using "session".',
+        'Stencil stencil.run.selectionBehavior must be one of: defaults, last-used, picker. Using "defaults".',
+      ],
+    });
+  });
+
   function mockStencilRunSettings(values: Record<string, unknown>): void {
     getConfiguration.mockReturnValue({
       get: vi.fn((key: string) => values[key]),

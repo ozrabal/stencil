@@ -889,6 +889,8 @@ describe('runTemplateService', () => {
       stage: 'lm-api-execution',
       templateName: 'alpha',
     });
+    expect(clipboardDeliver).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   it('falls back to the clipboard after a typed lm-api delivery failure', async () => {
@@ -1149,6 +1151,140 @@ describe('runTemplateService', () => {
         'Stencil could not deliver template "alpha" to clipboard: clipboard blocked Opened the resolved prompt in a new editor instead.',
       kind: 'completed-with-fallback',
       requestedDeliveryTarget: 'clipboard',
+      templateName: 'alpha',
+    });
+  });
+
+  it('returns delivery-failed when Copilot delivery and all fallback targets fail', async () => {
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
+    };
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'copilot-chat') {
+        return {
+          available: true,
+          implemented: true,
+          supportedChatModes: ['ask', 'edit', 'agent'],
+          supportedModes: ['default', 'insert', 'send'],
+          target: 'copilot-chat',
+        };
+      }
+
+      if (target === 'clipboard') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['default'],
+          target: 'clipboard',
+          unavailableReason: 'VS Code clipboard services are not available in the current runtime.',
+        };
+      }
+
+      return {
+        available: true,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'editor',
+      };
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+    copilotDeliver.mockRejectedValue(new Error('chat open failed'));
+    deliver.mockRejectedValue(new Error('editor unavailable'));
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'copilot-chat', mode: 'insert' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(clipboardDeliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'copilot-chat',
+      kind: 'delivery-failed',
+      reason:
+        'Copilot Chat failed: chat open failed. VS Code clipboard services are not available in the current runtime. Editor fallback failed: Stencil could not deliver template "alpha" to editor: editor unavailable',
+      templateName: 'alpha',
+    });
+  });
+
+  it('returns delivery-failed when lm-api fallback targets are unavailable or unsupported', async () => {
+    const stencil = {
+      get: vi.fn().mockResolvedValue({
+        body: '# Prompt',
+        filePath: '/workspace/.stencil/templates/alpha.md',
+        frontmatter: { description: 'Alpha', name: 'alpha', version: 1 },
+        source: 'project',
+      }),
+      resolve: vi.fn().mockResolvedValue({
+        inputs: [],
+        placeholders: [],
+        resolvedBody: '# Prompt',
+        unresolvedCount: 0,
+      }),
+    };
+    getDeliveryTargetCapability.mockImplementation(async (target: string) => {
+      if (target === 'lm-api') {
+        return {
+          available: false,
+          implemented: true,
+          supportedChatModes: [],
+          supportedModes: ['execute'],
+          target: 'lm-api',
+          unavailableReason:
+            'Stencil Language Model execution is unavailable because this VS Code runtime does not expose vscode.lm.selectChatModels.',
+        };
+      }
+
+      if (target === 'clipboard') {
+        return {
+          available: false,
+          implemented: false,
+          supportedChatModes: [],
+          supportedModes: ['default'],
+          target: 'clipboard',
+        };
+      }
+
+      return {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'editor',
+        unavailableReason: 'VS Code editor services are not available in the current runtime.',
+      };
+    });
+    resolveRunTemplateTarget.mockResolvedValue({ kind: 'selected', templateName: 'alpha' });
+
+    const { runTemplate } = await import('../../../src/services/runTemplateService.js');
+    const outcome = await runTemplate({
+      invocationSource: 'command-palette',
+      options: { deliveryTarget: 'lm-api', mode: 'execute' },
+      stencil: stencil as never,
+      workspace: workspace as never,
+    });
+
+    expect(lmApiDeliver).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      deliveryTarget: 'lm-api',
+      kind: 'delivery-failed',
+      reason:
+        'Stencil Language Model execution is unavailable because this VS Code runtime does not expose vscode.lm.selectChatModels. Clipboard fallback is not supported in this extension build. VS Code editor services are not available in the current runtime.',
       templateName: 'alpha',
     });
   });
@@ -1884,6 +2020,31 @@ describe('runTemplateService', () => {
     expect(showInformationMessage).toHaveBeenNthCalledWith(
       2,
       'No Stencil templates were found in this workspace.',
+    );
+  });
+
+  it('maps cancellation outcomes to informational messages', async () => {
+    const { showRunTemplateOutcomeMessage } =
+      await import('../../../src/services/runTemplateService.js');
+
+    await showRunTemplateOutcomeMessage({
+      kind: 'cancelled',
+      stage: 'placeholder-input',
+      templateName: 'alpha',
+    });
+    await showRunTemplateOutcomeMessage({
+      kind: 'cancelled',
+      stage: 'lm-api-execution',
+      templateName: 'beta',
+    });
+
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      1,
+      'Cancelled running template "alpha".',
+    );
+    expect(showInformationMessage).toHaveBeenNthCalledWith(
+      2,
+      'Cancelled language model execution for template "beta".',
     );
   });
 

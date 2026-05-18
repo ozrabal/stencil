@@ -74,4 +74,23 @@ describe('copilotChatDeliveryAdapter', () => {
       query: '# Prompt',
     });
   });
+
+  it('keeps insert mode equivalent to default mode while propagating non-ask chat modes', async () => {
+    const { copilotChatDeliveryAdapter } =
+      await import('../../../src/services/delivery/copilotChatDelivery.js');
+
+    const result = await copilotChatDeliveryAdapter.deliver({
+      chatMode: 'edit',
+      mode: 'insert',
+      resolvedBody: '# Prompt',
+      templateName: 'alpha',
+    });
+
+    expect(executeCommand).toHaveBeenCalledWith('workbench.action.chat.open', {
+      isPartialQuery: true,
+      mode: 'edit',
+      query: '# Prompt',
+    });
+    expect(result.deliveryActionLabel).toBe('inserted');
+  });
 });

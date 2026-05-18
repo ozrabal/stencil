@@ -246,6 +246,44 @@ describe('pickRunProfile', () => {
     await expect(pickRunProfile()).resolves.toBeUndefined();
   });
 
+  it('returns undefined without opening the picker when no targets are available', async () => {
+    mockCapabilities({
+      clipboard: {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'clipboard',
+      },
+      'copilot-chat': {
+        available: false,
+        implemented: true,
+        supportedChatModes: ['ask'],
+        supportedModes: ['default', 'insert', 'send'],
+        target: 'copilot-chat',
+      },
+      editor: {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['default'],
+        target: 'editor',
+      },
+      'lm-api': {
+        available: false,
+        implemented: true,
+        supportedChatModes: [],
+        supportedModes: ['execute'],
+        target: 'lm-api',
+      },
+    });
+
+    const { pickRunProfile } = await import('../../../src/services/runProfilePicker.js');
+    await expect(pickRunProfile()).resolves.toBeUndefined();
+
+    expect(showQuickPick).not.toHaveBeenCalled();
+  });
+
   it('returns a clipboard profile when the clipboard entry is selected', async () => {
     mockCapabilities({
       clipboard: {

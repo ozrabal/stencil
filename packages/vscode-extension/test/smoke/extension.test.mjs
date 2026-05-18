@@ -3,6 +3,13 @@ import path from 'node:path';
 
 import * as vscode from 'vscode';
 
+import {
+  getWorkspaceFolder,
+  getWorkspaceUri,
+  openWorkspaceDocument,
+  showWorkspaceDocument,
+} from './helpers.mjs';
+
 const EXTENSION_ID = 'stencil-pm.stencil-vscode';
 const CONTRIBUTED_COMMANDS = [
   'stencil.openTemplate',
@@ -38,19 +45,13 @@ export async function run() {
     'Expected the tree refresh command to execute in a real workspace host.',
   );
 
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  assert.ok(workspaceFolder, 'Expected the smoke test workspace to be open.');
+  const workspaceFolder = getWorkspaceFolder();
 
-  const templateUri = vscode.Uri.joinPath(
-    workspaceFolder.uri,
-    '.stencil',
-    'templates',
-    'example.md',
-  );
-  const readmeUri = vscode.Uri.joinPath(workspaceFolder.uri, 'README.md');
+  const templateUri = getWorkspaceUri('.stencil', 'templates', 'run-editor.md');
+  const readmeUri = getWorkspaceUri('README.md');
 
-  const templateDocument = await vscode.workspace.openTextDocument(templateUri);
-  const readmeDocument = await vscode.workspace.openTextDocument(readmeUri);
+  const templateDocument = await openWorkspaceDocument('.stencil', 'templates', 'run-editor.md');
+  const readmeDocument = await openWorkspaceDocument('README.md');
 
   assert.equal(
     templateDocument.languageId,
@@ -62,4 +63,38 @@ export async function run() {
     'markdown',
     `Expected ${path.basename(readmeUri.fsPath)} outside .stencil/ to remain Markdown.`,
   );
+
+  await showWorkspaceDocument('src', 'example.js');
+
+  await assert.doesNotReject(
+    vscode.commands.executeCommand('stencil.runTemplateInEditor', 'run-editor'),
+    'Expected the editor run command to execute in a real workspace host.',
+  );
+
+  const runEditor = vscode.window.activeTextEditor;
+  assert.ok(runEditor, 'Expected the editor run command to open a document.');
+  assert.equal(
+    runEditor.document.getText(),
+    'Summarize src/example.ts for a code review.',
+    'Expected the editor run command to open the resolved prompt body.',
+  );
+  assert.equal(
+    runEditor.document.languageId,
+    'markdown',
+    'Expected editor delivery to open the resolved prompt as Markdown.',
+  );
+
+  await assert.doesNotReject(
+    vscode.commands.executeCommand('stencil.runTemplateToClipboard', 'run-clipboard'),
+    'Expected the clipboard run command to execute in a real workspace host.',
+  );
+
+  if (typeof vscode.env.clipboard.readText === 'function') {
+    const clipboardText = await vscode.env.clipboard.readText();
+    assert.equal(
+      clipboardText,
+      'Create a review checklist for src/example.ts.',
+      'Expected clipboard delivery to write the resolved prompt body when clipboard reads are available.',
+    );
+  }
 }

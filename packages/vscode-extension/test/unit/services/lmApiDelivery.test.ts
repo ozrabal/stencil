@@ -218,6 +218,58 @@ describe('lmApiDeliveryAdapter', () => {
     ).rejects.toThrow(
       'Stencil could not find the selected language model "copilot-2". Retry the command and choose a different model.',
     );
+    expect(beginLmResponsePanelSession).not.toHaveBeenCalled();
+  });
+
+  it('fails clearly when no compatible model exists before opening the panel', async () => {
+    selectChatModels.mockResolvedValue([]);
+
+    const { lmApiDeliveryAdapter } =
+      await import('../../../src/services/delivery/lmApiDelivery.js');
+
+    await expect(
+      lmApiDeliveryAdapter.deliver({
+        chatMode: 'ask',
+        mode: 'execute',
+        resolvedBody: '# Prompt',
+        templateName: 'alpha',
+      }),
+    ).rejects.toThrow(
+      'Stencil Language Model execution is unavailable because no compatible Copilot-backed chat model is available.',
+    );
+
+    expect(beginLmResponsePanelSession).not.toHaveBeenCalled();
+  });
+
+  it('maps provider not-found failures to a typed retry message', async () => {
+    const error = MockLanguageModelError.NotFound();
+    selectChatModels.mockResolvedValue([
+      {
+        id: 'copilot-1',
+        name: 'Copilot Model',
+        sendRequest,
+      },
+    ]);
+    userMessage.mockReturnValue({ content: '# Prompt', role: 'user' });
+    sendRequest.mockRejectedValue(error);
+
+    const { lmApiDeliveryAdapter } =
+      await import('../../../src/services/delivery/lmApiDelivery.js');
+
+    await expect(
+      lmApiDeliveryAdapter.deliver({
+        chatMode: 'ask',
+        mode: 'execute',
+        resolvedBody: '# Prompt',
+        templateName: 'alpha',
+      }),
+    ).rejects.toThrow(
+      'The selected language model is no longer available. Retry the command and choose another model.',
+    );
+
+    expect(fail).toHaveBeenCalledWith(
+      'The selected language model is no longer available. Retry the command and choose another model.',
+    );
   });
 });
 

@@ -54,4 +54,24 @@ describe('clipboardDeliveryAdapter', () => {
       ),
     );
   });
+
+  it('normalizes unknown clipboard failures into the typed error message', async () => {
+    writeText.mockRejectedValue('clipboard blocked');
+
+    const { clipboardDeliveryAdapter, ClipboardDeliveryError } =
+      await import('../../../src/services/delivery/clipboardDelivery.js');
+
+    await expect(
+      clipboardDeliveryAdapter.deliver({
+        chatMode: 'ask',
+        mode: 'default',
+        resolvedBody: '# Prompt',
+        templateName: 'alpha',
+      }),
+    ).rejects.toEqual(
+      new ClipboardDeliveryError(
+        'Stencil could not copy template "alpha" to the clipboard: clipboard blocked',
+      ),
+    );
+  });
 });

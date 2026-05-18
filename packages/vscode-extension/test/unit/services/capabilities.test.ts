@@ -58,23 +58,25 @@ describe('delivery capabilities', () => {
     const { getDeliveryTargetCapability } =
       await import('../../../src/services/delivery/capabilities.js');
 
-    await expect(getDeliveryTargetCapability('editor')).resolves.toMatchObject({
+    await expect(getDeliveryTargetCapability('editor')).resolves.toEqual({
       available: false,
       implemented: true,
       supportedChatModes: [],
       supportedModes: ['default'],
       target: 'editor',
+      unavailableReason: 'VS Code editor services are not available in the current runtime.',
     });
 
     openTextDocument = vi.fn();
     showTextDocument = vi.fn();
 
-    await expect(getDeliveryTargetCapability('editor')).resolves.toMatchObject({
+    await expect(getDeliveryTargetCapability('editor')).resolves.toEqual({
       available: true,
       implemented: true,
       supportedChatModes: [],
       supportedModes: ['default'],
       target: 'editor',
+      unavailableReason: 'VS Code editor services are not available in the current runtime.',
     });
   });
 
@@ -82,22 +84,24 @@ describe('delivery capabilities', () => {
     const { getDeliveryTargetCapability } =
       await import('../../../src/services/delivery/capabilities.js');
 
-    await expect(getDeliveryTargetCapability('clipboard')).resolves.toMatchObject({
+    await expect(getDeliveryTargetCapability('clipboard')).resolves.toEqual({
       available: false,
       implemented: true,
       supportedChatModes: [],
       supportedModes: ['default'],
       target: 'clipboard',
+      unavailableReason: 'VS Code clipboard services are not available in the current runtime.',
     });
 
     clipboardWriteText = vi.fn();
 
-    await expect(getDeliveryTargetCapability('clipboard')).resolves.toMatchObject({
+    await expect(getDeliveryTargetCapability('clipboard')).resolves.toEqual({
       available: true,
       implemented: true,
       supportedChatModes: [],
       supportedModes: ['default'],
       target: 'clipboard',
+      unavailableReason: 'VS Code clipboard services are not available in the current runtime.',
     });
   });
 

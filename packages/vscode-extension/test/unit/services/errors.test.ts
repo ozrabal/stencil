@@ -40,7 +40,8 @@ describe('showCommandError', () => {
       await import('../../../src/services/errors.js');
 
     expect(getUnknownErrorMessage(new Error('boom'))).toBe('boom');
-    expect(getUnknownErrorMessage('boom')).toBe('Unknown error');
+    expect(getUnknownErrorMessage('boom')).toBe('boom');
+    expect(getUnknownErrorMessage(403)).toBe('403');
     expect(getUserFacingErrorMessage(new Error('boom'))).toBe('Stencil failed unexpectedly: boom');
   });
 });

@@ -2,6 +2,12 @@
 
 Use this checklist in an Extension Development Host for the current extension surface, including Copilot Chat and Language Model API delivery.
 
+Automation boundary:
+
+- `pnpm --filter stencil-vscode test:unit` covers mocked orchestration, capability, configuration, and adapter contracts.
+- `pnpm --filter stencil-vscode test:smoke` covers activation plus deterministic local editor and clipboard runs in a real host.
+- The checklist below remains manual-only for real Copilot Chat behavior, real LM provider behavior, and broader host compatibility.
+
 ## Checklist
 
 1. Open an empty workspace and run `Stencil: Run Template`.
