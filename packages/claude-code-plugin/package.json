@@ -2,5 +2,10 @@
   "name": "@stencil-pm/claude-code-plugin",
   "version": "0.0.1",
   "private": true,
-  "description": "Claude Code plugin adapter for Stencil template management"
+  "type": "module",
+  "description": "Claude Code plugin adapter for Stencil template management",
+  "scripts": {
+    "test": "node --test",
+    "lint": "bash -n scripts/*.sh && bash -n scripts/lib/*.sh"
+  }
 }

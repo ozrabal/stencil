@@ -1,7 +1,7 @@
 {
   "name": "stencil",
   "version": "0.0.1",
-  "description": "Stencil template management for Claude Code",
+  "description": "Stencil template management for Claude Code with canonical /stencil* commands",
   "skills": [
     "skills/stencil",
     "skills/stencil-init",

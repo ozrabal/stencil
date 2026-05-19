@@ -1,0 +1,48 @@
+{
+  "bridgeErrorCode": "STENCIL_ADAPTER_BRIDGE_UNAVAILABLE",
+  "directCommands": [
+    "/stencilinit",
+    "/stencilcreate <name>",
+    "/stencillist",
+    "/stencilshow <name>",
+    "/stencilrun <name> [key=value ...]",
+    "/stencildelete <name>"
+  ],
+  "helpLines": [
+    "Stencil commands:",
+    "  /stencil help",
+    "  /stencil init",
+    "  /stencil create <name>",
+    "  /stencil list",
+    "  /stencil show <name>",
+    "  /stencil run <name> [key=value ...]",
+    "  /stencil delete <name>",
+    "",
+    "Direct commands:",
+    "  /stencilinit",
+    "  /stencilcreate <name>",
+    "  /stencillist",
+    "  /stencilshow <name>",
+    "  /stencilrun <name> [key=value ...]",
+    "  /stencildelete <name>"
+  ],
+  "manifestSkills": [
+    "skills/stencil",
+    "skills/stencil-init",
+    "skills/stencil-create",
+    "skills/stencil-list",
+    "skills/stencil-show",
+    "skills/stencil-run",
+    "skills/stencil-delete"
+  ],
+  "routerSubcommands": ["init", "create", "list", "show", "run", "delete"],
+  "skillFrontmatterNames": {
+    "skills/stencil/SKILL.md": "stencil",
+    "skills/stencil-init/SKILL.md": "stencilinit",
+    "skills/stencil-create/SKILL.md": "stencilcreate",
+    "skills/stencil-list/SKILL.md": "stencillist",
+    "skills/stencil-show/SKILL.md": "stencilshow",
+    "skills/stencil-run/SKILL.md": "stencilrun",
+    "skills/stencil-delete/SKILL.md": "stencildelete"
+  }
+}

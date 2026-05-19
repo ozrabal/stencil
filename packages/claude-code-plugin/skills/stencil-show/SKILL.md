@@ -1,8 +1,22 @@
 ---
-name: stencil-show
-description: Show details of a specific Stencil template.
+name: stencilshow
+description: Handle the canonical /stencilshow command for template inspection.
 ---
 
-# TODO
+# Purpose
 
-Implement stencil show logic: display template frontmatter, placeholders, and body for a given template name.
+Handle `/stencilshow` using the same routing contract as `/stencil show <name>`.
+
+# Accepted Form
+
+```text
+/stencilshow <name>
+```
+
+# Behavior
+
+- Require a template name as the first positional token.
+- Reject missing template names before transport invocation.
+- Reject extra positional tokens after the template name.
+- After validation, hand off to the shared shell transport path for `show`.
+- Do not display template frontmatter, placeholders, or body locally in Epic 1.
