@@ -2,6 +2,9 @@
   "name": "@stencil-pm/core",
   "version": "0.0.1",
   "type": "module",
+  "bin": {
+    "stencil-cli": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

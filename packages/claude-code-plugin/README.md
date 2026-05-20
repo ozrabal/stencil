@@ -47,20 +47,26 @@ Argument rules:
 - Commands that require a template name: `create`, `show`, `run`, `delete`
 - Commands that do not accept extra tokens: `init`, `list`
 - For `run`, the first positional token after the command is the template name and every remaining token must be passed through as a literal `key=value` input
-- The adapter does not coerce values and does not implement placeholder prompting in Epic 1
+- For `create`, the skill-facing transport may pass the full template payload as JSON on stdin while preserving the public `/stencilcreate <name>` command shape
+- The adapter does not coerce values and does not implement placeholder prompting in the shell bridge
 
 Ownership boundaries:
 
 - Skill files own user-facing guidance and the public command vocabulary
 - Shell scripts own normalization, validation of command shape, and transport invocation
 - `@stencil-pm/core` owns template discovery, validation, resolution, CRUD behavior, and future structured domain output
+- Handled core outcomes are emitted as JSON on stdout with exit `0`
+- Malformed invocation errors use stderr with exit `64`
+- Transport/runtime failures use stderr with exit `70`
 
-## Epic 1 Guarantees
+## Bridge Behavior
 
 - One public command surface: `/stencil`, `/stencilinit`, `/stencilcreate`, `/stencillist`, `/stencilshow`, `/stencilrun`, `/stencildelete`
 - Shared argument rules across router and direct commands
 - A centralized shell transport entrypoint
-- A stable temporary bridge failure until Epic 2 adds the real Node/core bridge
+- A real Node/core bridge backed by `@stencil-pm/core`
+- Public `run` delegates to the internal core `resolve` command
+- Internal bridge helpers `resolve`, `validate`, and `detect-context` remain available for adapter workflows
 
 ## Validation
 
@@ -74,4 +80,4 @@ bash -n packages/claude-code-plugin/scripts/lib/*.sh
 
 ## Status
 
-Epic 1 provides a routing shell only. Business behavior is intentionally not implemented in this package yet. Until Epic 2 lands, successful command routing ends in an explicit bridge-unavailable transport response instead of local template logic.
+The adapter remains transport-only. It validates command shape, resolves the core CLI path, forwards stdin/argv, and preserves stdout, stderr, and exit codes. Template business logic stays in `@stencil-pm/core`.

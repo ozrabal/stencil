@@ -87,29 +87,3 @@ test('required positional arguments are enforced before bridge invocation', () =
   assert.equal(initResult.stdout, '');
   assert.match(initResult.stderr, /Command "init" does not accept extra arguments\./);
 });
-
-test('run preserves inline key=value tokens and uses the shared bridge failure shape', () => {
-  const result = runCommand([
-    'run',
-    'review-checklist',
-    'component=AuthService',
-    'language=typescript',
-  ]);
-
-  assert.equal(result.status, 69);
-  assert.equal(result.stdout, '');
-  assert.match(result.stderr, new RegExp(`\\[${contract.bridgeErrorCode}\\]`));
-  assert.match(result.stderr, /command=run/);
-  assert.match(result.stderr, /template=review-checklist/);
-  assert.match(result.stderr, /args=component=AuthService language=typescript/);
-});
-
-test('bridge-unavailable routing shape is stable for zero-argument commands', () => {
-  const result = runCommand(['list']);
-
-  assert.equal(result.status, 69);
-  assert.equal(result.stdout, '');
-  assert.match(result.stderr, new RegExp(`\\[${contract.bridgeErrorCode}\\]`));
-  assert.match(result.stderr, /command=list/);
-  assert.doesNotMatch(result.stderr, /template=/);
-});
