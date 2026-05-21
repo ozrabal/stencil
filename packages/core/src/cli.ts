@@ -8,7 +8,15 @@ async function main(): Promise<number> {
   try {
     const stdinText = await readStdin();
     const parsed = parseCliArgs(process.argv.slice(2), stdinText);
-    const stencil = new Stencil({ projectDir: process.cwd() });
+    const stencilOptions: ConstructorParameters<typeof Stencil>[0] = {
+      projectDir: process.cwd(),
+    };
+
+    if ('projectOnly' in parsed && parsed.projectOnly) {
+      stencilOptions.globalDir = null;
+    }
+
+    const stencil = new Stencil(stencilOptions);
     const result = await runParsedCliCommand(parsed, stencil);
 
     if (result.stdout.length > 0) {

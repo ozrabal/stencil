@@ -1,6 +1,3 @@
-import { access } from 'node:fs/promises';
-import path from 'node:path';
-
 import type { StencilCliCommand, StencilCliEnvelope, StencilCliInitData } from './cli-contract.js';
 import type { ValidationResult } from './types.js';
 
@@ -151,19 +148,7 @@ async function dispatchParsedCommand(
 }
 
 async function runInit(stencil: Stencil): Promise<StencilCliInitData> {
-  const stencilDir = stencil.storage.getProjectDir();
-  const projectDir = path.dirname(stencilDir);
-  const templatesDir = path.join(stencilDir, 'templates');
-  const alreadyExisted = await pathExists(templatesDir);
-
-  await stencil.init();
-
-  return {
-    alreadyExisted,
-    createdPaths: [stencilDir, templatesDir],
-    projectDir,
-    stencilDir,
-  };
+  return stencil.init();
 }
 
 function handleValidationError(
@@ -242,13 +227,4 @@ function buildValidateFailureData(
   }
 
   return data;
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
 }

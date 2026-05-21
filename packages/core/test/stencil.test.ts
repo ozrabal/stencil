@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -112,21 +112,58 @@ describe('Stencil constructor', () => {
 });
 
 describe('Stencil.init()', () => {
-  it('creates the .stencil/templates directory', async () => {
-    await stencil.init();
+  it('creates the .stencil/templates directory and seeds the sample template', async () => {
+    const result = await stencil.init();
 
     const stats = await stat(path.join(projectDir, '.stencil', 'templates'));
     expect(stats.isDirectory()).toBe(true);
+    expect(result.alreadyExisted).toBe(false);
+    expect(result.sampleTemplateCreated).toBe(true);
+    expect(result.sampleTemplateName).toBe('quick-fix');
+    expect(result.sampleTemplatePath).toBe(
+      path.join(projectDir, '.stencil', 'templates', 'quick-fix.md'),
+    );
+    await expect(readFile(result.sampleTemplatePath as string, 'utf8')).resolves.toContain(
+      'name: quick-fix',
+    );
   });
 
   it('is idempotent', async () => {
     await stencil.init();
-    await expect(stencil.init()).resolves.toBeUndefined();
+    await expect(stencil.init()).resolves.toMatchObject({
+      alreadyExisted: true,
+      createdPaths: [],
+      sampleTemplateCreated: false,
+    });
   });
 
   it('does not throw if .stencil/templates already exists', async () => {
     await mkdir(path.join(projectDir, '.stencil', 'templates'), { recursive: true });
-    await expect(stencil.init()).resolves.toBeUndefined();
+    await expect(stencil.init()).resolves.toMatchObject({
+      alreadyExisted: true,
+      sampleTemplateCreated: true,
+    });
+  });
+
+  it('does not overwrite an existing sample template', async () => {
+    await stencil.init();
+    const samplePath = path.join(projectDir, '.stencil', 'templates', 'quick-fix.md');
+    await writeFile(samplePath, 'custom sample content', 'utf8');
+
+    const result = await stencil.init();
+
+    expect(result.sampleTemplateCreated).toBe(false);
+    await expect(readFile(samplePath, 'utf8')).resolves.toBe('custom sample content');
+  });
+
+  it('does not reseed the sample when other project templates already exist', async () => {
+    await saveTemplateInDir(path.join(projectDir, '.stencil'), 'existing-template', 'Body');
+    await expect(stencil.init()).resolves.toMatchObject({
+      sampleTemplateCreated: false,
+    });
+    await expect(
+      stat(path.join(projectDir, '.stencil', 'templates', 'quick-fix.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 
@@ -1398,8 +1435,11 @@ describe('Stencil end-to-end happy path', () => {
     expect(created.filePath).toBeTruthy();
 
     const all = await stencil.list();
-    expect(all).toHaveLength(1);
-    expect(all[0]?.frontmatter.name).toBe('create-rest-endpoint');
+    expect(all).toHaveLength(2);
+    expect(all.map((template) => template.frontmatter.name)).toEqual([
+      'create-rest-endpoint',
+      'quick-fix',
+    ]);
 
     const fetched = await stencil.get('create-rest-endpoint');
     expect(fetched).not.toBeNull();
@@ -1435,7 +1475,9 @@ describe('Stencil end-to-end happy path', () => {
 
     expect(await stencil.delete('create-rest-endpoint')).toBe(true);
     expect(await stencil.get('create-rest-endpoint')).toBeNull();
-    expect(await stencil.list()).toHaveLength(0);
+    expect((await stencil.list()).map((template) => template.frontmatter.name)).toEqual([
+      'quick-fix',
+    ]);
   });
 
   it('runs create, update, copy, rename, validate, list, and delete coherently', async () => {
@@ -1476,7 +1518,7 @@ describe('Stencil end-to-end happy path', () => {
     expect(finalCopy?.frontmatter.description).toBe('Copied workflow template');
 
     const names = (await stencil.list()).map((template) => template.frontmatter.name);
-    expect(names).toEqual(['workflow-template', 'workflow-template-final']);
+    expect(names).toEqual(['quick-fix', 'workflow-template', 'workflow-template-final']);
 
     const validation = await stencil.validate('workflow-template-final');
     expect(validation.valid).toBe(true);
@@ -1485,5 +1527,8 @@ describe('Stencil end-to-end happy path', () => {
     expect(await stencil.delete('workflow-template-final')).toBe(true);
     expect(await stencil.get('workflow-template')).toBeNull();
     expect(await stencil.get('workflow-template-final')).toBeNull();
+    expect((await stencil.list()).map((template) => template.frontmatter.name)).toEqual([
+      'quick-fix',
+    ]);
   });
 });

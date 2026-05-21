@@ -5,7 +5,7 @@ description: Handle the canonical /stencilinit command for project initializatio
 
 # Purpose
 
-Handle `/stencilinit` using the same routing contract as `/stencil init`.
+Handle `/stencilinit` using the same routing contract as `/stencil init`, then present the handled core `init` JSON as a first-use onboarding flow.
 
 # Accepted Form
 
@@ -17,5 +17,18 @@ Handle `/stencilinit` using the same routing contract as `/stencil init`.
 
 - Accept no positional arguments.
 - If extra tokens are supplied, reject the command before transport invocation.
-- After validation, hand off to the shared shell transport path for `init`.
-- Do not create files or simulate `@stencil-pm/core` behavior in Epic 1.
+- Invoke the shared shell transport path for `init`.
+- Treat the core JSON envelope as the source of truth. Do not infer bootstrap results from filesystem inspection.
+- Public Claude behavior must stay project-scoped; rely on the bridge contract rather than mentioning global templates.
+
+# Presentation
+
+- If `status` is `ok` and `data.sampleTemplateCreated` is `true`, explain that Stencil bootstrapped the local `.stencil/` project scaffold and created the sample template `quick-fix`.
+- In that first-bootstrap path, tell the user the next useful commands:
+  - `/stencillist`
+  - `/stencilshow quick-fix`
+  - `/stencilrun quick-fix ...`
+  - `/stencilcreate <name>`
+- If `status` is `ok` and `data.alreadyExisted` is `true`, use a shorter already-initialized response and point the user to `/stencillist` or `/stencilshow <name>`.
+- If `status` is `error`, show the handled error plainly and stop.
+- Keep formatting and guidance in the skill layer. Do not move presentation into shell output.

@@ -49,6 +49,7 @@ Argument rules:
 - For `run`, the first positional token after the command is the template name and every remaining token must be passed through as a literal `key=value` input
 - For `create`, the skill-facing transport may pass the full template payload as JSON on stdin while preserving the public `/stencilcreate <name>` command shape
 - The adapter does not coerce values and does not implement placeholder prompting in the shell bridge
+- Public Claude flows invoke the core CLI with `--project-only` so discovery stays scoped to the current project's `.stencil/` tree for the MVP
 
 Ownership boundaries:
 
@@ -65,14 +66,51 @@ Ownership boundaries:
 - Shared argument rules across router and direct commands
 - A centralized shell transport entrypoint
 - A real Node/core bridge backed by `@stencil-pm/core`
+- Public adapter commands use explicit project-only scope instead of inheriting `~/.stencil` lookup implicitly
+- `init` bootstraps `.stencil/`, `.stencil/templates/`, and a sample `quick-fix` template through core-owned logic
 - Public `run` delegates to the internal core `resolve` command
 - Internal bridge helpers `resolve`, `validate`, and `detect-context` remain available for adapter workflows
+
+## Claude Flow Expectations
+
+- `/stencilinit` should describe whether the project was freshly bootstrapped or was already initialized
+- `/stencillist` should show only project-local templates and keep output to browse summaries
+- `/stencilshow <name>` should present template metadata, placeholders, body, and validation warnings from core
+- Skills own that presentation layer; shell scripts continue to forward JSON only
+
+## Bootstrap Contract
+
+The handled `init` JSON includes:
+
+- `alreadyExisted`
+- `createdPaths`
+- `projectDir`
+- `stencilDir`
+- `sampleTemplateCreated`
+- `sampleTemplateName`
+- `sampleTemplatePath`
+
+The default bootstrap sample is `quick-fix`, created only when the project has no existing project-local templates and the sample file is missing.
+
+## Acceptance Path
+
+The intended Epic 3 happy path is:
+
+```text
+/stencilinit
+/stencillist
+/stencilshow quick-fix
+/stencilcreate <name>
+/stencilshow <name>
+/stencilrun <name> [key=value ...]
+```
 
 ## Validation
 
 Run the adapter checks with:
 
 ```bash
+pnpm --filter @stencil-pm/core build
 pnpm --filter @stencil-pm/claude-code-plugin test
 bash -n packages/claude-code-plugin/scripts/*.sh
 bash -n packages/claude-code-plugin/scripts/lib/*.sh
@@ -80,4 +118,4 @@ bash -n packages/claude-code-plugin/scripts/lib/*.sh
 
 ## Status
 
-The adapter remains transport-only. It validates command shape, resolves the core CLI path, forwards stdin/argv, and preserves stdout, stderr, and exit codes. Template business logic stays in `@stencil-pm/core`.
+The shell adapter remains transport-only. Command presentation now lives in the Claude skills, while template bootstrap, discovery, validation, and resolution stay in `@stencil-pm/core`.

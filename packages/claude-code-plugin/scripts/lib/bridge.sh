@@ -37,22 +37,26 @@ stencil::invoke_bridge() {
   shift 2 || true
   local cli_path
   cli_path="$(stencil::resolve_core_cli)"
+  local -a project_only_args=("--project-only")
 
   case "${command}" in
     init | list | detect-context)
-      exec node "${cli_path}" "${command}"
+      if [[ "${command}" == "detect-context" ]]; then
+        exec node "${cli_path}" "${command}"
+      fi
+      exec node "${cli_path}" "${command}" "${project_only_args[@]}"
       ;;
     show | validate | delete)
-      exec node "${cli_path}" "${command}" "${template_name}"
+      exec node "${cli_path}" "${command}" "${project_only_args[@]}" "${template_name}"
       ;;
     run)
-      exec node "${cli_path}" resolve "${template_name}" "$@"
+      exec node "${cli_path}" resolve "${project_only_args[@]}" "${template_name}" "$@"
       ;;
     resolve)
       exec node "${cli_path}" resolve "${template_name}" "$@"
       ;;
     create)
-      exec node "${cli_path}" create --stdin-json
+      exec node "${cli_path}" create "${project_only_args[@]}" --stdin-json
       ;;
     *)
       stencil::die 64 "Unsupported bridge command: ${command}"

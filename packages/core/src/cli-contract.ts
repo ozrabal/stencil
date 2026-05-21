@@ -1,5 +1,11 @@
 import type { StencilError, TemplateValidationError } from './errors.js';
-import type { ResolutionResult, Template, ValidationIssue, ValidationResult } from './types.js';
+import type {
+  ResolutionResult,
+  StencilBootstrapResult,
+  Template,
+  ValidationIssue,
+  ValidationResult,
+} from './types.js';
 
 export type StencilCliCommand =
   | 'create'
@@ -35,12 +41,7 @@ export interface StencilCliTemplateDetail extends StencilCliTemplateSummary {
   placeholders: Template['frontmatter']['placeholders'];
 }
 
-export interface StencilCliInitData {
-  alreadyExisted: boolean;
-  createdPaths: string[];
-  projectDir: string;
-  stencilDir: string;
-}
+export type StencilCliInitData = StencilBootstrapResult;
 
 export interface StencilCliCreateData {
   template: StencilCliTemplateDetail;

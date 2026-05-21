@@ -1,4 +1,3 @@
-import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { PlaceholderDelimiters } from './placeholders.js';
@@ -7,6 +6,7 @@ import type {
   ListOptions,
   RenameTemplateOptions,
   ResolutionResult,
+  StencilBootstrapResult,
   StencilOptions,
   Template,
   TemplateFrontmatter,
@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import type { StencilConfig } from './types.js';
 
+import { bootstrapProjectStencil } from './bootstrap.js';
 import { CollectionManager } from './collections.js';
 import { loadStencilConfig } from './config.js';
 import {
@@ -75,9 +76,9 @@ export class Stencil {
     this.collections = new CollectionManager(this.storage);
   }
 
-  async init(): Promise<void> {
+  async init(): Promise<StencilBootstrapResult> {
     await this.ensureRuntimeReady();
-    await mkdir(path.join(this.stencilDir, 'templates'), { recursive: true });
+    return bootstrapProjectStencil(path.dirname(this.stencilDir), this.stencilDir, this.storage);
   }
 
   async resolve(

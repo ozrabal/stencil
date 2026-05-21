@@ -190,6 +190,16 @@ export interface StencilConfig {
   version: number;
 }
 
+export interface StencilBootstrapResult {
+  alreadyExisted: boolean;
+  createdPaths: string[];
+  projectDir: string;
+  sampleTemplateCreated: boolean;
+  sampleTemplateName?: string;
+  sampleTemplatePath?: string;
+  stencilDir: string;
+}
+
 // ── Public API ─────────────────────────────────────────
 
 export interface StencilOptions {

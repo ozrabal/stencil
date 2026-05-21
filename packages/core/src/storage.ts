@@ -35,10 +35,12 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   async listTemplates(options?: ListOptions): Promise<Template[]> {
-    const projectTemplates = await loadTemplatesFromDir(this.projectDir, 'project');
-    const globalTemplates = this.globalDir
-      ? await loadTemplatesFromDir(this.globalDir, 'global')
-      : [];
+    const projectTemplates =
+      options?.source === 'global' ? [] : await loadTemplatesFromDir(this.projectDir, 'project');
+    const globalTemplates =
+      this.globalDir && options?.source !== 'project'
+        ? await loadTemplatesFromDir(this.globalDir, 'global')
+        : [];
 
     const projectNames = new Set(projectTemplates.map((template) => template.frontmatter.name));
     let filtered = [
@@ -48,10 +50,6 @@ export class LocalStorageProvider implements StorageProvider {
 
     if (options?.collection !== undefined) {
       filtered = filtered.filter((template) => template.collection === options.collection);
-    }
-
-    if (options?.source !== undefined) {
-      filtered = filtered.filter((template) => template.source === options.source);
     }
 
     if (options?.tags !== undefined && options.tags.length > 0) {

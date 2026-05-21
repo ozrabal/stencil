@@ -5,14 +5,19 @@ export const STENCIL_CLI_EXIT_INVALID_USAGE = 64;
 export const STENCIL_CLI_EXIT_RUNTIME_FAILURE = 70;
 
 export type ParsedStencilCliCommand =
-  | { command: 'create'; payload: CreateStdinPayload }
-  | { command: 'delete'; templateName: string }
+  | { command: 'create'; payload: CreateStdinPayload; projectOnly: boolean }
+  | { command: 'delete'; projectOnly: boolean; templateName: string }
   | { command: 'detect-context' }
-  | { command: 'init' }
-  | { command: 'list' }
-  | { command: 'resolve'; explicitValues: Record<string, string>; templateName: string }
-  | { command: 'show'; templateName: string }
-  | { command: 'validate'; templateName: string };
+  | { command: 'init'; projectOnly: boolean }
+  | { command: 'list'; projectOnly: boolean }
+  | {
+      command: 'resolve';
+      explicitValues: Record<string, string>;
+      projectOnly: boolean;
+      templateName: string;
+    }
+  | { command: 'show'; projectOnly: boolean; templateName: string }
+  | { command: 'validate'; projectOnly: boolean; templateName: string };
 
 export interface CreateStdinPayload {
   body: string;
@@ -59,28 +64,42 @@ export function parseCliArgs(argv: string[], stdinText: string): ParsedStencilCl
     case 'show':
     case 'validate':
       if (commandToken === 'show') {
+        const { args, projectOnly } = parseSharedFlags(rest);
         return {
           command: 'show',
-          templateName: parseSingleTemplateArg(commandToken, rest),
+          projectOnly,
+          templateName: parseSingleTemplateArg(commandToken, args),
         };
       }
 
       if (commandToken === 'validate') {
+        const { args, projectOnly } = parseSharedFlags(rest);
         return {
           command: 'validate',
-          templateName: parseSingleTemplateArg(commandToken, rest),
+          projectOnly,
+          templateName: parseSingleTemplateArg(commandToken, args),
         };
       }
 
-      return {
-        command: 'delete',
-        templateName: parseSingleTemplateArg(commandToken, rest),
-      };
+      {
+        const { args, projectOnly } = parseSharedFlags(rest);
+        return {
+          command: 'delete',
+          projectOnly,
+          templateName: parseSingleTemplateArg(commandToken, args),
+        };
+      }
     case 'detect-context':
-    case 'init':
-    case 'list':
       assertNoExtraArgs(commandToken, rest);
-      return { command: commandToken as 'detect-context' | 'init' | 'list' };
+      return { command: 'detect-context' };
+    case 'init':
+    case 'list': {
+      const { args, projectOnly } = parseSharedFlags(rest);
+      assertNoExtraArgs(commandToken, args);
+      return { command: commandToken, projectOnly } as
+        | { command: 'init'; projectOnly: boolean }
+        | { command: 'list'; projectOnly: boolean };
+    }
     case 'resolve':
       return parseResolveArgs(rest);
     default:
@@ -98,6 +117,9 @@ export function getCliHelpText(): string {
     '  stencil-cli delete <name>',
     '  stencil-cli resolve <name> [key=value ...]',
     '  stencil-cli create --stdin-json',
+    '',
+    'Options:',
+    '  --project-only  Disable global template lookup (~/.stencil) for this command',
   ].join('\n');
 }
 
@@ -120,11 +142,13 @@ function parseSingleTemplateArg(command: string, args: string[]): string {
 }
 
 function parseResolveArgs(args: string[]): ParsedStencilCliCommand {
-  if (args.length === 0) {
+  const { args: resolveArgs, projectOnly } = parseSharedFlags(args);
+
+  if (resolveArgs.length === 0) {
     throw new CliUsageError('Missing template name for command "resolve".');
   }
 
-  const [templateName, ...tokens] = args;
+  const [templateName, ...tokens] = resolveArgs;
   const explicitValues: Record<string, string> = {};
 
   for (const token of tokens) {
@@ -141,12 +165,15 @@ function parseResolveArgs(args: string[]): ParsedStencilCliCommand {
   return {
     command: 'resolve',
     explicitValues,
+    projectOnly,
     templateName: templateName as string,
   };
 }
 
 function parseCreateArgs(args: string[], stdinText: string): ParsedStencilCliCommand {
-  if (args.length !== 1 || args[0] !== '--stdin-json') {
+  const { args: createArgs, projectOnly } = parseSharedFlags(args);
+
+  if (createArgs.length !== 1 || createArgs[0] !== '--stdin-json') {
     throw new CliUsageError('Command "create" requires exactly one flag: --stdin-json.');
   }
 
@@ -168,7 +195,24 @@ function parseCreateArgs(args: string[], stdinText: string): ParsedStencilCliCom
   return {
     command: 'create',
     payload: parseCreatePayload(parsed),
+    projectOnly,
   };
+}
+
+function parseSharedFlags(args: string[]): { args: string[]; projectOnly: boolean } {
+  const remaining: string[] = [];
+  let projectOnly = false;
+
+  for (const arg of args) {
+    if (arg === '--project-only') {
+      projectOnly = true;
+      continue;
+    }
+
+    remaining.push(arg);
+  }
+
+  return { args: remaining, projectOnly };
 }
 
 function parseCreatePayload(payload: unknown): CreateStdinPayload {

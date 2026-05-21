@@ -19,6 +19,10 @@ function runBridge(projectDir, args, options = {}) {
   return spawnSync('bash', [commandScriptPath, ...args], {
     cwd: projectDir,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...options.env,
+    },
     input: options.stdin,
   });
 }
@@ -33,7 +37,7 @@ function normalizePath(targetPath) {
   return realpathSync(targetPath);
 }
 
-test('init returns handled JSON and creates the stencil directories', () => {
+test('init returns handled JSON and creates the bootstrap sample', () => {
   const projectDir = makeTempProject();
 
   try {
@@ -47,16 +51,35 @@ test('init returns handled JSON and creates the stencil directories', () => {
       normalizePath(envelope.data.stencilDir),
       normalizePath(path.join(projectDir, '.stencil')),
     );
+    assert.equal(envelope.data.sampleTemplateCreated, true);
+    assert.equal(envelope.data.sampleTemplateName, 'quick-fix');
+    assert.equal(
+      normalizePath(envelope.data.sampleTemplatePath),
+      normalizePath(path.join(projectDir, '.stencil', 'templates', 'quick-fix.md')),
+    );
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
   }
 });
 
-test('create, show, run, list, validate, and delete flow across the real bridge', () => {
+test('init, list, show, create, run, validate, and delete flow across the real bridge', () => {
   const projectDir = makeTempProject();
 
   try {
-    parseJsonStdout(runBridge(projectDir, ['init']));
+    const initEnvelope = parseJsonStdout(runBridge(projectDir, ['init']));
+    assert.equal(initEnvelope.data.sampleTemplateName, 'quick-fix');
+
+    const initialListEnvelope = parseJsonStdout(runBridge(projectDir, ['list']));
+    assert.equal(initialListEnvelope.command, 'list');
+    assert.deepEqual(
+      initialListEnvelope.data.templates.map((template) => template.name),
+      ['quick-fix'],
+    );
+
+    const sampleShowEnvelope = parseJsonStdout(runBridge(projectDir, ['show', 'quick-fix']));
+    assert.equal(sampleShowEnvelope.command, 'show');
+    assert.equal(sampleShowEnvelope.data.template.name, 'quick-fix');
+    assert.match(sampleShowEnvelope.data.template.body, /Review the change in/);
 
     const createPayload = JSON.stringify({
       body: 'Review {{component_name}} in {{$ctx.project_name}}.',
@@ -93,9 +116,17 @@ test('create, show, run, list, validate, and delete flow across the real bridge'
 
     const listEnvelope = parseJsonStdout(runBridge(projectDir, ['list']));
     assert.equal(listEnvelope.command, 'list');
-    assert.equal(listEnvelope.data.templates.length, 1);
-    assert.equal(listEnvelope.data.templates[0].name, 'review-checklist');
-    assert.equal(Object.hasOwn(listEnvelope.data.templates[0], 'body'), false);
+    assert.deepEqual(
+      listEnvelope.data.templates.map((template) => template.name),
+      ['quick-fix', 'review-checklist'],
+    );
+    assert.equal(
+      Object.hasOwn(
+        listEnvelope.data.templates.find((template) => template.name === 'review-checklist'),
+        'body',
+      ),
+      false,
+    );
 
     const validateEnvelope = parseJsonStdout(runBridge(projectDir, ['validate', 'review-checklist']));
     assert.equal(validateEnvelope.command, 'validate');
@@ -110,6 +141,36 @@ test('create, show, run, list, validate, and delete flow across the real bridge'
     assert.equal(secondDeleteEnvelope.data.deleted, false);
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('bridge list and show stay project-only even when HOME has global templates', () => {
+  const projectDir = makeTempProject();
+  const homeDir = mkdtempSync(path.join(os.tmpdir(), 'stencil-claude-home-'));
+
+  try {
+    writeTemplate(
+      path.join(homeDir, '.stencil'),
+      'global-only',
+      'Global body',
+      ['- name: ignored', '  description: ignored', '  required: true'],
+    );
+    parseJsonStdout(runBridge(projectDir, ['init'], { env: { HOME: homeDir } }));
+
+    const listEnvelope = parseJsonStdout(runBridge(projectDir, ['list'], { env: { HOME: homeDir } }));
+    assert.deepEqual(
+      listEnvelope.data.templates.map((template) => template.name),
+      ['quick-fix'],
+    );
+
+    const showEnvelope = parseJsonStdout(
+      runBridge(projectDir, ['show', 'global-only'], { env: { HOME: homeDir } }),
+    );
+    assert.equal(showEnvelope.status, 'error');
+    assert.equal(showEnvelope.error.code, 'TEMPLATE_NOT_FOUND');
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+    rmSync(homeDir, { force: true, recursive: true });
   }
 });
 
@@ -133,6 +194,27 @@ test('validate returns validation_failed JSON for broken templates', () => {
   }
 });
 
+test('show surfaces validation warnings from core without converting them into errors', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    writeTemplate(
+      path.join(projectDir, '.stencil'),
+      'warning-template',
+      'Body without placeholders.',
+      ['- name: orphaned_input', '  description: Declared but unused', '  required: true'],
+    );
+
+    const envelope = parseJsonStdout(runBridge(projectDir, ['show', 'warning-template']));
+    assert.equal(envelope.command, 'show');
+    assert.equal(envelope.status, 'ok');
+    assert.equal(envelope.data.validation.valid, true);
+    assert.equal(envelope.data.validation.issues.length > 0, true);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
 test('detect-context remains available as an internal bridge helper', () => {
   const projectDir = makeTempProject();
 
@@ -145,3 +227,25 @@ test('detect-context remains available as an internal bridge helper', () => {
     rmSync(projectDir, { force: true, recursive: true });
   }
 });
+
+function writeTemplate(stencilDir, name, body, placeholderLines = []) {
+  mkdirSync(path.join(stencilDir, 'templates'), { recursive: true });
+  const placeholdersBlock =
+    placeholderLines.length === 0 ? '' : `placeholders:\n${placeholderLines.join('\n')}\n`;
+  writeFileSync(
+    path.join(stencilDir, 'templates', `${name}.md`),
+    [
+      '---',
+      `name: ${name}`,
+      `description: Description for ${name}`,
+      'version: 1',
+      placeholdersBlock.trimEnd(),
+      '---',
+      '',
+      body,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    'utf8',
+  );
+}

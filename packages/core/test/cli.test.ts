@@ -12,6 +12,7 @@ import {
 } from '../src/cli-args.js';
 import { runParsedCliCommand } from '../src/cli-runner.js';
 import { Stencil } from '../src/stencil.js';
+import { LocalStorageProvider } from '../src/storage.js';
 
 let projectDir: string;
 
@@ -56,6 +57,11 @@ describe('CLI runner', () => {
     expect(envelope.command).toBe('init');
     expect(envelope.data.projectDir).toBe(projectDir);
     expect(envelope.data.createdPaths).toContain(path.join(projectDir, '.stencil'));
+    expect(envelope.data.sampleTemplateCreated).toBe(true);
+    expect(envelope.data.sampleTemplateName).toBe('quick-fix');
+    expect(envelope.data.sampleTemplatePath).toBe(
+      path.join(projectDir, '.stencil', 'templates', 'quick-fix.md'),
+    );
   });
 
   it('creates templates from stdin JSON payloads', async () => {
@@ -113,6 +119,43 @@ describe('CLI runner', () => {
     expect(envelope.data.templates[0].body).toBeUndefined();
   });
 
+  it('retains default global lookup when project-only is not requested', async () => {
+    const globalDir = await makeTempDir('stencil-global');
+
+    try {
+      await createTemplate('alpha', 'Alpha body');
+      await saveTemplateInStorageRoot(globalDir, 'global-only', 'Global body');
+
+      const result = await runCli(['list'], '', { globalDir });
+      const envelope = parseJson(result.stdout);
+
+      expect(envelope.data.templates.map((template: { name: string }) => template.name)).toEqual([
+        'alpha',
+        'global-only',
+      ]);
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+
+  it('uses project-only mode to ignore global-only templates', async () => {
+    const globalDir = await makeTempDir('stencil-global');
+
+    try {
+      await createTemplate('alpha', 'Alpha body');
+      await saveTemplateInStorageRoot(globalDir, 'global-only', 'Global body');
+
+      const result = await runCli(['list', '--project-only'], '', { globalDir });
+      const envelope = parseJson(result.stdout);
+
+      expect(envelope.data.templates.map((template: { name: string }) => template.name)).toEqual([
+        'alpha',
+      ]);
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+
   it('shows template details with validation', async () => {
     await createTemplate('alpha', 'Alpha body');
 
@@ -134,6 +177,22 @@ describe('CLI runner', () => {
     expect(result.stderr).toBe('');
     expect(envelope.status).toBe('error');
     expect(envelope.error.code).toBe('TEMPLATE_NOT_FOUND');
+  });
+
+  it('returns handled JSON errors for global-only templates in project-only show mode', async () => {
+    const globalDir = await makeTempDir('stencil-global');
+
+    try {
+      await saveTemplateInStorageRoot(globalDir, 'global-only', 'Global body');
+
+      const result = await runCli(['show', '--project-only', 'global-only'], '', { globalDir });
+      const envelope = parseJson(result.stdout);
+
+      expect(envelope.status).toBe('error');
+      expect(envelope.error.code).toBe('TEMPLATE_NOT_FOUND');
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
   });
 
   it('returns validation_failed for invalid validate results and ok for warnings-free templates', async () => {
@@ -210,10 +269,16 @@ describe('CLI runner', () => {
   });
 });
 
-async function runCli(args: string[], stdinText: string) {
+async function runCli(args: string[], stdinText: string, options: { globalDir?: string } = {}) {
   try {
     const parsed = parseCliArgs(args, stdinText);
-    return await runParsedCliCommand(parsed, new Stencil({ projectDir }));
+    return await runParsedCliCommand(
+      parsed,
+      new Stencil({
+        globalDir: 'projectOnly' in parsed && parsed.projectOnly ? null : options.globalDir,
+        projectDir,
+      }),
+    );
   } catch (error) {
     if (error instanceof CliUsageError || error instanceof CliInputError) {
       return {
@@ -237,6 +302,24 @@ async function createTemplate(name: string, body: string): Promise<void> {
     },
     body,
   );
+}
+
+async function saveTemplateInStorageRoot(
+  storageRoot: string,
+  name: string,
+  body: string,
+): Promise<void> {
+  const storage = new LocalStorageProvider(storageRoot);
+  await storage.saveTemplate({
+    body,
+    filePath: '',
+    frontmatter: {
+      description: `Description for ${name}`,
+      name,
+      version: 1,
+    },
+    source: 'project',
+  });
 }
 
 function parseJson(stdout: string) {
