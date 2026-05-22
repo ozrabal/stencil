@@ -75,8 +75,61 @@ Ownership boundaries:
 
 - `/stencilinit` should describe whether the project was freshly bootstrapped or was already initialized
 - `/stencillist` should show only project-local templates and keep output to browse summaries
-- `/stencilshow <name>` should present template metadata, placeholders, body, and validation warnings from core
+- `/stencilcreate <name>` should run as a conversational authoring flow that gathers the template description, optional tags, a Markdown body, and only the placeholder metadata needed for the MVP
+- `/stencilshow <name>` should present template metadata, parsed body token summaries when available, placeholders, body, and validation warnings from core
+- `/stencilrun <name> [key=value ...]` should stay transport-backed and prove the saved template with explicit inline values rather than adapter-side fill logic
 - Skills own that presentation layer; shell scripts continue to forward JSON only
+
+## Conversational Create Contract
+
+The Epic 4 create flow is:
+
+```text
+/stencilcreate <name>
+```
+
+The skill should guide the user through this order:
+
+1. Confirm the target template name.
+2. Collect a required description.
+3. Ask for optional comma-separated tags.
+4. Collect the template body as normal Markdown in chat.
+5. Inspect placeholders using the core token grammar.
+6. Ask follow-up questions only when placeholder metadata is actually needed.
+7. Show a save preview.
+8. Persist through the existing `create` bridge.
+9. Point the user to `/stencilshow <name>` and `/stencilrun <name> [key=value ...]`.
+
+Placeholder handling rules:
+
+- `{{$ctx.key}}` auto-resolves and does not require saved metadata.
+- `{{input:name}}` and `{{input:name:default}}` may be saved without frontmatter placeholder entries.
+- `{{name}}` may optionally be backed by saved placeholder metadata for richer inspection and later prompting.
+- The adapter must not invent non-Stencil syntax or reimplement placeholder parsing in shell.
+
+Create payload rules:
+
+- `frontmatter.name` must match the command argument.
+- `frontmatter.description` is required.
+- `frontmatter.version` must be `1`.
+- `tags` are optional and should be omitted when absent.
+- `placeholders` are optional and should be written only when the user chose to save richer metadata.
+
+Before save, the skill should preview:
+
+- name
+- description
+- tags
+- detected placeholders
+- placeholder metadata that will be written
+- body
+
+Failure handling:
+
+- cancellation writes nothing
+- `validation_failed` means correctable template issues
+- `error` means handled domain failure such as name conflict or storage failure
+- overwrite stays out of scope
 
 ## Bootstrap Contract
 
@@ -94,15 +147,13 @@ The default bootstrap sample is `quick-fix`, created only when the project has n
 
 ## Acceptance Path
 
-The intended Epic 3 happy path is:
+The intended Epic 4 happy path is:
 
 ```text
 /stencilinit
-/stencillist
-/stencilshow quick-fix
-/stencilcreate <name>
-/stencilshow <name>
-/stencilrun <name> [key=value ...]
+/stencilcreate review-checklist
+/stencilshow review-checklist
+/stencilrun review-checklist component_name=AuthService
 ```
 
 ## Validation
@@ -116,6 +167,8 @@ bash -n packages/claude-code-plugin/scripts/*.sh
 bash -n packages/claude-code-plugin/scripts/lib/*.sh
 ```
 
+For a manual Claude Code walkthrough, see [docs/testing-in-claude.md](/Users/piotrlepkowski/Private/stencil/packages/claude-code-plugin/docs/testing-in-claude.md).
+
 ## Status
 
-The shell adapter remains transport-only. Command presentation now lives in the Claude skills, while template bootstrap, discovery, validation, and resolution stay in `@stencil-pm/core`.
+The shell adapter remains transport-only. Conversational authoring and presentation live in the Claude skills, while template bootstrap, parsing, validation, persistence, and resolution stay in `@stencil-pm/core`.

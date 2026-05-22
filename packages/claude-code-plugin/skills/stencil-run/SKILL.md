@@ -21,4 +21,5 @@ Handle `/stencilrun` using the same routing contract as `/stencil run <name> [ke
 - Reject missing template names before transport invocation.
 - Reject malformed inline tokens that do not contain `=`.
 - After validation, hand off to the shared shell transport path for `run`.
-- Do not prompt for placeholders or implement template resolution locally in Epic 1.
+- For the Epic 4 proof path, prefer inline `key=value` inputs after `/stencilcreate` success.
+- Do not prompt for placeholders or implement template resolution locally in this flow.

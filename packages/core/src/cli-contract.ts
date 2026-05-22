@@ -38,6 +38,7 @@ export interface StencilCliTemplateSummary {
 export interface StencilCliTemplateDetail extends StencilCliTemplateSummary {
   author?: string;
   body: string;
+  bodyTokens?: Template['bodyTokens'];
   placeholders: Template['frontmatter']['placeholders'];
 }
 
@@ -187,6 +188,7 @@ export function toCliTemplateSummary(template: Template): StencilCliTemplateSumm
 export function toCliTemplateDetail(template: Template): StencilCliTemplateDetail {
   const detail: StencilCliTemplateDetail = {
     body: template.body,
+    bodyTokens: template.bodyTokens,
     ...toCliTemplateSummary(template),
     placeholders: template.frontmatter.placeholders,
   };

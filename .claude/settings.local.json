@@ -8,7 +8,10 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm lint:*)",
       "Bash(pnpm typecheck:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(claude --version)",
+      "Bash(claude plugin:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -192,6 +192,20 @@ describe('Stencil.create()', () => {
     expect(fetched?.frontmatter.name).toBe('retrievable');
   });
 
+  it('throws a conflict error when creating a duplicate project template name', async () => {
+    await stencil.create(makeFrontmatter('duplicate-template'), 'Original body');
+
+    await expect(
+      stencil.create(makeFrontmatter('duplicate-template'), 'Replacement body'),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(TemplateConflictError);
+      expect((error as TemplateConflictError).code).toBe(StencilErrorCode.TEMPLATE_ALREADY_EXISTS);
+      expect((error as TemplateConflictError).operation).toBe('create');
+      expect((error as TemplateConflictError).templateName).toBe('duplicate-template');
+      return true;
+    });
+  });
+
   it('throws if frontmatter is invalid', async () => {
     const badFrontmatter: TemplateFrontmatter = {
       description: '',

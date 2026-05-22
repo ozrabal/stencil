@@ -66,10 +66,11 @@ describe('CLI runner', () => {
 
   it('creates templates from stdin JSON payloads', async () => {
     const payload = JSON.stringify({
-      body: 'Review {{input:component_name}} carefully.',
+      body: 'Review {{input:component_name}} in {{$ctx.project_name}} carefully.',
       frontmatter: {
         description: 'Code review checklist',
         name: 'review-checklist',
+        tags: ['review', 'mvp'],
         version: 1,
       },
     });
@@ -83,7 +84,45 @@ describe('CLI runner', () => {
     expect(envelope.command).toBe('create');
     expect(envelope.data.template.name).toBe('review-checklist');
     expect(envelope.data.template.body).toContain('component_name');
+    expect(envelope.data.template.tags).toEqual(['review', 'mvp']);
+    expect(envelope.data.template.bodyTokens).toEqual([
+      {
+        inputName: 'component_name',
+        kind: 'inline-input',
+        raw: 'input:component_name',
+        token: 'input:component_name',
+      },
+      {
+        contextKey: 'project_name',
+        kind: 'context',
+        raw: '$ctx.project_name',
+        token: '$ctx.project_name',
+      },
+    ]);
     expect(envelope.data.validation.valid).toBe(true);
+  });
+
+  it('returns handled JSON errors for duplicate create names', async () => {
+    await createTemplate('duplicate-template', 'Original body');
+
+    const payload = JSON.stringify({
+      body: 'Replacement body',
+      frontmatter: {
+        description: 'Duplicate name',
+        name: 'duplicate-template',
+        version: 1,
+      },
+    });
+
+    const result = await runCli(['create', '--stdin-json'], payload);
+    const envelope = parseJson(result.stdout);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(envelope.status).toBe('error');
+    expect(envelope.command).toBe('create');
+    expect(envelope.error.code).toBe('TEMPLATE_ALREADY_EXISTS');
+    expect(envelope.data.templateName).toBe('duplicate-template');
   });
 
   it('returns validation_failed for invalid create payloads that reach core validation', async () => {
@@ -157,7 +196,7 @@ describe('CLI runner', () => {
   });
 
   it('shows template details with validation', async () => {
-    await createTemplate('alpha', 'Alpha body');
+    await createTemplate('alpha', 'Alpha {{input:component_name}} {{$ctx.project_name}} body');
 
     const result = await runCli(['show', 'alpha'], '');
     const envelope = parseJson(result.stdout);
@@ -165,7 +204,23 @@ describe('CLI runner', () => {
     expect(envelope.status).toBe('ok');
     expect(envelope.command).toBe('show');
     expect(envelope.data.template.name).toBe('alpha');
-    expect(envelope.data.template.body).toBe('Alpha body');
+    expect(envelope.data.template.body).toBe(
+      'Alpha {{input:component_name}} {{$ctx.project_name}} body',
+    );
+    expect(envelope.data.template.bodyTokens).toEqual([
+      {
+        inputName: 'component_name',
+        kind: 'inline-input',
+        raw: 'input:component_name',
+        token: 'input:component_name',
+      },
+      {
+        contextKey: 'project_name',
+        kind: 'context',
+        raw: '$ctx.project_name',
+        token: '$ctx.project_name',
+      },
+    ]);
     expect(envelope.data.validation.valid).toBe(true);
   });
 

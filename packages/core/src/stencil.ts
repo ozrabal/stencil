@@ -129,6 +129,19 @@ export class Stencil {
 
     this.assertMutationIsValid(template, 'create', 'Cannot create template');
 
+    const existingTemplate = await this.storage.getProjectTemplate(frontmatter.name);
+    if (existingTemplate !== null) {
+      throw this.createAlreadyExistsError(
+        `Template "${frontmatter.name}" already exists in the project directory.`,
+        'create',
+        {
+          targetName: frontmatter.name,
+          targetScope: 'project',
+          templateName: frontmatter.name,
+        },
+      );
+    }
+
     await this.storage.saveTemplate(template);
 
     return (await this.storage.getTemplate(frontmatter.name)) ?? template;

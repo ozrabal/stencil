@@ -87,6 +87,7 @@ test('init, list, show, create, run, validate, and delete flow across the real b
         description: 'Review template',
         name: 'review-checklist',
         placeholders: [{ description: 'Component under review', name: 'component_name', required: true }],
+        tags: ['review', 'checklist'],
         version: 1,
       },
     });
@@ -97,10 +98,40 @@ test('init, list, show, create, run, validate, and delete flow across the real b
     assert.equal(createEnvelope.command, 'create');
     assert.equal(createEnvelope.status, 'ok');
     assert.equal(createEnvelope.data.template.name, 'review-checklist');
+    assert.deepEqual(createEnvelope.data.template.tags, ['review', 'checklist']);
+    assert.deepEqual(createEnvelope.data.template.bodyTokens, [
+      {
+        kind: 'legacy-placeholder',
+        placeholderName: 'component_name',
+        raw: 'component_name',
+        token: 'component_name',
+      },
+      {
+        contextKey: 'project_name',
+        kind: 'context',
+        raw: '$ctx.project_name',
+        token: '$ctx.project_name',
+      },
+    ]);
 
     const showEnvelope = parseJsonStdout(runBridge(projectDir, ['show', 'review-checklist']));
     assert.equal(showEnvelope.command, 'show');
     assert.equal(showEnvelope.data.template.body, 'Review {{component_name}} in {{$ctx.project_name}}.');
+    assert.deepEqual(showEnvelope.data.template.tags, ['review', 'checklist']);
+    assert.deepEqual(showEnvelope.data.template.bodyTokens, [
+      {
+        kind: 'legacy-placeholder',
+        placeholderName: 'component_name',
+        raw: 'component_name',
+        token: 'component_name',
+      },
+      {
+        contextKey: 'project_name',
+        kind: 'context',
+        raw: '$ctx.project_name',
+        token: '$ctx.project_name',
+      },
+    ]);
 
     const needsInputEnvelope = parseJsonStdout(runBridge(projectDir, ['run', 'review-checklist']));
     assert.equal(needsInputEnvelope.command, 'resolve');
@@ -132,6 +163,14 @@ test('init, list, show, create, run, validate, and delete flow across the real b
     assert.equal(validateEnvelope.command, 'validate');
     assert.equal(validateEnvelope.status, 'ok');
     assert.equal(validateEnvelope.data.validation.valid, true);
+
+    const duplicateCreateEnvelope = parseJsonStdout(
+      runBridge(projectDir, ['create', 'review-checklist'], { stdin: createPayload }),
+    );
+    assert.equal(duplicateCreateEnvelope.command, 'create');
+    assert.equal(duplicateCreateEnvelope.status, 'error');
+    assert.equal(duplicateCreateEnvelope.error.code, 'TEMPLATE_ALREADY_EXISTS');
+    assert.equal(duplicateCreateEnvelope.data.templateName, 'review-checklist');
 
     const deleteEnvelope = parseJsonStdout(runBridge(projectDir, ['delete', 'review-checklist']));
     assert.equal(deleteEnvelope.command, 'delete');

@@ -26,6 +26,7 @@ Handle `/stencilshow` using the same routing contract as `/stencil show <name>`,
 - If `status` is `ok`, present:
   - template name and description
   - version, collection, tags, author, source, and file path
+  - body token summary when core provides parsed `bodyTokens`
   - placeholder summary when placeholders exist
   - the template body in a fenced Markdown block
 - If `data.validation.valid` is `true` but `data.validation.issues` contains warnings, surface those warnings explicitly.
