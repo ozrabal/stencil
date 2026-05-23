@@ -4,7 +4,7 @@ Claude Code adapter for Stencil template management.
 
 ## Overview
 
-This package provides Skills for Claude Code that expose Stencil template operations as slash commands. It follows the adapter boundary from [docs/stencil-architecture.md](/Users/piotrlepkowski/Private/stencil/docs/stencil-architecture.md): the Claude Code package owns command UX and transport only, while `@stencil-pm/core` owns real template logic.
+This package provides Skills for Claude Code that expose Stencil template operations as slash commands. It follows the adapter boundary from [docs/stencil-architecture.md](/Users/piotrlepkowski/Private/stencil/docs/stencil-architecture.md): the Claude Code package owns command UX, conversational orchestration, and transport, while `@stencil-pm/core` owns template parsing, validation, context resolution, and placeholder resolution.
 
 ## Canonical Command Surface
 
@@ -70,6 +70,7 @@ Ownership boundaries:
 - `init` bootstraps `.stencil/`, `.stencil/templates/`, and a sample `quick-fix` template through core-owned logic
 - Public `run` delegates to the internal core `resolve` command
 - Internal bridge helpers `resolve`, `validate`, and `detect-context` remain available for adapter workflows
+- `detect-context` is an internal helper, not a public slash command
 
 ## Claude Flow Expectations
 
@@ -77,8 +78,38 @@ Ownership boundaries:
 - `/stencillist` should show only project-local templates and keep output to browse summaries
 - `/stencilcreate <name>` should run as a conversational authoring flow that gathers the template description, optional tags, a Markdown body, and only the placeholder metadata needed for the MVP
 - `/stencilshow <name>` should present template metadata, parsed body token summaries when available, placeholders, body, and validation warnings from core
-- `/stencilrun <name> [key=value ...]` should stay transport-backed and prove the saved template with explicit inline values rather than adapter-side fill logic
+- `/stencilrun <name> [key=value ...]` should stay transport-backed, resolve through core, collect only unresolved required inputs conversationally, and ask for final confirmation before executing the resolved prompt
 - Skills own that presentation layer; shell scripts continue to forward JSON only
+
+## Run Contract
+
+`/stencilrun <name> [key=value ...]` is the public run flow.
+
+Resolution ownership:
+
+- core owns template loading, validation, context lookup, normalization, and placeholder resolution
+- the Claude skill owns question wording, repeated `resolve` calls, cancellation handling, provenance presentation, and the final execution handoff
+- shell scripts only pass argv/stdin through and return stdout/stderr/exit codes
+
+Handled resolve outcomes:
+
+- `status=ok`: show provenance, show the resolved prompt, ask for final confirmation
+- `status=needs_input`: ask only for unresolved required inputs from `data.inputs`, then re-run `resolve` with accumulated explicit values
+- `status=validation_failed`: show validation issues and stop
+- `status=error`: show the handled error and stop
+
+Prompting rules:
+
+- ask only for inputs whose core-reported `source` is `unresolved`
+- never ask again for values already satisfied by explicit args, context, or defaults
+- preserve the input order returned by core
+- cancellation during collection stops the flow without another resolve call or execution handoff
+
+Completion handoff:
+
+- after full resolution, present a concise provenance summary for explicit, conversational, context, and default values
+- show the resolved prompt in a fenced block
+- require explicit confirmation before continuing with the resolved prompt as the next task
 
 ## Conversational Create Contract
 
@@ -98,7 +129,7 @@ The skill should guide the user through this order:
 6. Ask follow-up questions only when placeholder metadata is actually needed.
 7. Show a save preview.
 8. Persist through the existing `create` bridge.
-9. Point the user to `/stencilshow <name>` and `/stencilrun <name> [key=value ...]`.
+9. Point the user to `/stencilshow <name>` and `/stencilrun <name> [key=value ...]`, explaining that run can now finish from inline values, defaults, context, and conversational follow-up.
 
 Placeholder handling rules:
 
@@ -147,7 +178,7 @@ The default bootstrap sample is `quick-fix`, created only when the project has n
 
 ## Acceptance Path
 
-The intended Epic 4 happy path is:
+The intended Epic 5 happy path is:
 
 ```text
 /stencilinit
@@ -155,6 +186,19 @@ The intended Epic 4 happy path is:
 /stencilshow review-checklist
 /stencilrun review-checklist component_name=AuthService
 ```
+
+The intended missing-input path is:
+
+```text
+/stencilrun review-checklist
+```
+
+Expected behavior:
+
+- Claude reuses the same transport-backed resolve call
+- Claude asks only for unresolved required inputs
+- Claude does not ask for values already satisfied by `$ctx.*` or defaults
+- Claude shows the final resolved prompt and asks for explicit confirmation before execution
 
 ## Validation
 
@@ -171,4 +215,4 @@ For a manual Claude Code walkthrough, see [docs/testing-in-claude.md](/Users/pio
 
 ## Status
 
-The shell adapter remains transport-only. Conversational authoring and presentation live in the Claude skills, while template bootstrap, parsing, validation, persistence, and resolution stay in `@stencil-pm/core`.
+The shell adapter remains transport-only. Conversational authoring, missing-input completion, and presentation live in the Claude skills, while template bootstrap, parsing, validation, persistence, context resolution, and placeholder resolution stay in `@stencil-pm/core`.

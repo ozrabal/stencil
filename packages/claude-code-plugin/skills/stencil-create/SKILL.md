@@ -36,6 +36,7 @@ Follow this authoring order:
 7. Show a save preview.
 8. Persist through the shared `create` bridge path.
 9. After success, direct the user to `/stencilshow <name>` and `/stencilrun <name> [key=value ...]`.
+   Explain that `/stencilrun` now resolves from inline values, context, defaults, and conversational follow-up for any remaining required inputs.
 
 # Placeholder Rules
 
@@ -120,3 +121,4 @@ After a successful save:
 - confirm the template was saved project-locally
 - point the user to `/stencilshow <name>` for inspection
 - point the user to `/stencilrun <name> [key=value ...]` to prove the template resolves
+- explain that inline `key=value` inputs are optional when context, defaults, or conversational completion can finish the run

@@ -61,6 +61,10 @@ Direct commands:
   /stencildelete <name>
 ```
 
-# Temporary Epic 1 Bridge Behavior
+# Bridge Behavior
 
-After argument validation, hand off to the shared shell transport path. If transport reaches the bridge layer, use the explicit bridge-unavailable response rather than simulating template operations.
+After argument validation, route to the matching direct-command contract.
+
+- Shared shell transport stays responsible for normalization and bridge invocation.
+- `run` resolves through core and may continue as a conversational completion flow in `skills/stencil-run`.
+- Do not simulate template operations or bypass the real bridge.

@@ -2,7 +2,7 @@
 
 This document gives a manual end-to-end test flow for the Stencil Claude Code adapter.
 
-It is intentionally written as a copy-paste script so you can run the public slash commands in Claude and verify the real `init -> create -> show -> run` path.
+It is intentionally written as a copy-paste script so you can run the public slash commands in Claude and verify the real `init -> create -> show -> run` path, including conversational completion for missing required inputs.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ Expected result:
   - one context token for `$ctx.project_name`
 - the body is shown in a fenced Markdown block
 
-### 4. Prove The Template Resolves
+### 4. Prove The Template Resolves With Inline Input
 
 ```text
 /stencilrun review-checklist component_name=AuthService
@@ -120,9 +120,40 @@ Expected result:
 
 Expected result:
 
-- the command resolves successfully
-- the rendered output contains `AuthService`
-- the rendered output uses the current project context for `$ctx.project_name`
+- the command resolves successfully without follow-up questions
+- Claude shows a concise provenance summary
+- the resolved prompt contains `AuthService`
+- the resolved prompt uses the current project context for `$ctx.project_name`
+- Claude asks for final confirmation before executing the resolved prompt
+
+### 5. Prove Conversational Completion For One Missing Input
+
+```text
+/stencilrun review-checklist
+```
+
+Expected result:
+
+- Claude does not ask for `$ctx.project_name`
+- Claude asks only for `component_name`
+- the question uses the saved placeholder description when available
+- after the answer, Claude re-runs the same resolve flow
+- Claude shows the resolved prompt and asks for final confirmation before execution
+
+### 6. Cancel Before Final Execution
+
+Run again:
+
+```text
+/stencilrun review-checklist
+```
+
+Answer the missing value, then decline at the final execute-or-cancel confirmation.
+
+Expected result:
+
+- Claude stops cleanly
+- no further execution handoff happens
 
 ## Legacy Placeholder Variant
 
@@ -193,7 +224,53 @@ Expected result:
 
 Expected result:
 
-- the rendered output contains `BillingService`
+- the resolved prompt contains `BillingService`
+- Claude asks for final confirmation before execution
+
+## Context And Default Resolution Variant
+
+This verifies that `/stencilrun` asks only for values core still reports as unresolved.
+
+### 1. Create The Template
+
+```text
+/stencilcreate defaults-and-context
+```
+
+Description:
+
+```text
+Template with defaults and context
+```
+
+Tags:
+
+```text
+defaults, context
+```
+
+Body:
+
+```md
+Project: {{$ctx.project_name}}
+Mode: {{input:mode:draft}}
+Owner: {{input:owner}}
+```
+
+Confirm the save preview.
+
+### 2. Verify Run
+
+```text
+/stencilrun defaults-and-context
+```
+
+Expected result:
+
+- Claude does not ask for `mode`
+- Claude does not ask for `$ctx.project_name`
+- Claude asks only for `owner`
+- the final provenance summary distinguishes context, default, and conversationally collected values
 
 ## Failure Tests
 
@@ -290,6 +367,7 @@ Expected result:
 
 - `show` succeeds
 - `run` succeeds without additional `key=value` inputs
+- Claude still asks for final confirmation before execution
 
 ## Quick Troubleshooting
 

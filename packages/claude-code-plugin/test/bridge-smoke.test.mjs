@@ -137,6 +137,20 @@ test('init, list, show, create, run, validate, and delete flow across the real b
     assert.equal(needsInputEnvelope.command, 'resolve');
     assert.equal(needsInputEnvelope.status, 'needs_input');
     assert.equal(needsInputEnvelope.data.unresolvedCount, 1);
+    assert.deepEqual(needsInputEnvelope.data.inputs, [
+      {
+        description: 'Component under review',
+        name: 'component_name',
+        required: true,
+        source: 'unresolved',
+        sources: ['legacy', 'frontmatter'],
+        value: '',
+      },
+    ]);
+    assert.deepEqual(needsInputEnvelope.data.placeholders, [
+      { name: 'component_name', source: 'unresolved', value: '' },
+    ]);
+    assert.match(needsInputEnvelope.data.resolvedBody, /{{component_name}}/);
 
     const runEnvelope = parseJsonStdout(
       runBridge(projectDir, ['run', 'review-checklist', 'component_name=AuthService']),
@@ -144,6 +158,16 @@ test('init, list, show, create, run, validate, and delete flow across the real b
     assert.equal(runEnvelope.command, 'resolve');
     assert.equal(runEnvelope.status, 'ok');
     assert.match(runEnvelope.data.resolvedBody, /AuthService/);
+    assert.deepEqual(runEnvelope.data.inputs, [
+      {
+        description: 'Component under review',
+        name: 'component_name',
+        required: true,
+        source: 'explicit',
+        sources: ['legacy', 'frontmatter'],
+        value: 'AuthService',
+      },
+    ]);
 
     const listEnvelope = parseJsonStdout(runBridge(projectDir, ['list']));
     assert.equal(listEnvelope.command, 'list');
@@ -249,6 +273,81 @@ test('show surfaces validation warnings from core without converting them into e
     assert.equal(envelope.status, 'ok');
     assert.equal(envelope.data.validation.valid, true);
     assert.equal(envelope.data.validation.issues.length > 0, true);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('run preserves provenance for context and default resolved inputs', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    const createPayload = JSON.stringify({
+      body: 'Project {{$ctx.project_name}} in {{input:mode:draft}} mode for {{input:owner}}.',
+      frontmatter: {
+        description: 'Default and context resolution',
+        name: 'defaults-and-context',
+        version: 1,
+      },
+    });
+
+    parseJsonStdout(runBridge(projectDir, ['create', 'defaults-and-context'], { stdin: createPayload }));
+
+    const unresolvedEnvelope = parseJsonStdout(runBridge(projectDir, ['run', 'defaults-and-context']));
+    assert.equal(unresolvedEnvelope.command, 'resolve');
+    assert.equal(unresolvedEnvelope.status, 'needs_input');
+    assert.equal(unresolvedEnvelope.data.unresolvedCount, 1);
+    assert.deepEqual(unresolvedEnvelope.data.inputs, [
+      {
+        defaultValue: 'draft',
+        name: 'mode',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'draft',
+      },
+      {
+        name: 'owner',
+        required: true,
+        source: 'unresolved',
+        sources: ['inline'],
+        value: '',
+      },
+    ]);
+    assert.deepEqual(unresolvedEnvelope.data.placeholders, [
+      { name: 'mode', source: 'default', value: 'draft' },
+      { name: 'owner', source: 'unresolved', value: '' },
+    ]);
+    assert.match(unresolvedEnvelope.data.resolvedBody, /draft mode/);
+    assert.doesNotMatch(unresolvedEnvelope.data.resolvedBody, /\{\{\$ctx\.project_name\}\}/);
+
+    const resolvedEnvelope = parseJsonStdout(
+      runBridge(projectDir, ['run', 'defaults-and-context', 'owner=Platform']),
+    );
+    assert.equal(resolvedEnvelope.status, 'ok');
+    assert.equal(resolvedEnvelope.data.unresolvedCount, 0);
+    assert.deepEqual(resolvedEnvelope.data.inputs, [
+      {
+        defaultValue: 'draft',
+        name: 'mode',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'draft',
+      },
+      {
+        name: 'owner',
+        required: true,
+        source: 'explicit',
+        sources: ['inline'],
+        value: 'Platform',
+      },
+    ]);
+    assert.deepEqual(resolvedEnvelope.data.placeholders, [
+      { name: 'mode', source: 'default', value: 'draft' },
+      { name: 'owner', source: 'explicit', value: 'Platform' },
+    ]);
+    assert.match(resolvedEnvelope.data.resolvedBody, /Platform/);
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
   }

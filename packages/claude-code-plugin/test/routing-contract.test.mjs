@@ -16,6 +16,8 @@ const readmePath = path.join(packageRoot, 'README.md');
 const readme = readFileSync(readmePath, 'utf8');
 const routerSkillPath = path.join(packageRoot, 'skills', 'stencil', 'SKILL.md');
 const routerSkill = readFileSync(routerSkillPath, 'utf8');
+const runSkillPath = path.join(packageRoot, 'skills', 'stencil-run', 'SKILL.md');
+const runSkill = readFileSync(runSkillPath, 'utf8');
 const commandScriptPath = path.join(packageRoot, 'scripts', 'stencil-command.sh');
 
 function runCommand(args) {
@@ -44,6 +46,13 @@ test('canonical command names are documented and hyphenated public commands are 
   for (const subcommand of contract.routerSubcommands) {
     assert.match(routerSkill, new RegExp(`/stencil ${subcommand}`));
   }
+});
+
+test('run skill documents needs_input handling and explicit execution confirmation', () => {
+  assert.match(runSkill, /status=needs_input/);
+  assert.match(runSkill, /ask only for unresolved required inputs/i);
+  assert.match(runSkill, /explicit user confirmation before executing the resolved prompt/i);
+  assert.match(runSkill, /user cancels/i);
 });
 
 test('skill frontmatter names match the canonical direct command surface', () => {

@@ -69,16 +69,34 @@ describe('CLI contract helpers', () => {
   it('builds needs_input envelopes for unresolved resolve results', () => {
     expect(
       createCliNeedsInputEnvelope('resolve', {
-        inputs: [],
-        placeholders: [],
+        inputs: [
+          {
+            description: 'Owner of the change',
+            name: 'owner',
+            required: true,
+            source: 'unresolved',
+            sources: ['frontmatter', 'legacy'],
+            value: '',
+          },
+        ],
+        placeholders: [{ name: 'owner', source: 'unresolved', value: '' }],
         resolvedBody: 'Body',
         unresolvedCount: 1,
       }),
     ).toEqual({
       command: 'resolve',
       data: {
-        inputs: [],
-        placeholders: [],
+        inputs: [
+          {
+            description: 'Owner of the change',
+            name: 'owner',
+            required: true,
+            source: 'unresolved',
+            sources: ['frontmatter', 'legacy'],
+            value: '',
+          },
+        ],
+        placeholders: [{ name: 'owner', source: 'unresolved', value: '' }],
         resolvedBody: 'Body',
         unresolvedCount: 1,
       },

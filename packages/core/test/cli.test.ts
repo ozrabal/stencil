@@ -286,12 +286,95 @@ describe('CLI runner', () => {
     const unresolvedEnvelope = parseJson(unresolved.stdout);
     expect(unresolvedEnvelope.status).toBe('needs_input');
     expect(unresolvedEnvelope.data.unresolvedCount).toBe(1);
+    expect(unresolvedEnvelope.data.inputs).toEqual([
+      {
+        description: 'Component name',
+        name: 'component_name',
+        required: true,
+        source: 'unresolved',
+        sources: ['legacy', 'frontmatter'],
+        value: '',
+      },
+    ]);
+    expect(unresolvedEnvelope.data.placeholders).toEqual([
+      { name: 'component_name', source: 'unresolved', value: '' },
+    ]);
 
     const resolved = await runCli(['resolve', 'review', 'component_name=AuthService'], '');
     const resolvedEnvelope = parseJson(resolved.stdout);
     expect(resolvedEnvelope.status).toBe('ok');
     expect(resolvedEnvelope.data.unresolvedCount).toBe(0);
     expect(resolvedEnvelope.data.resolvedBody).toContain('AuthService');
+    expect(resolvedEnvelope.data.inputs).toEqual([
+      {
+        description: 'Component name',
+        name: 'component_name',
+        required: true,
+        source: 'explicit',
+        sources: ['legacy', 'frontmatter'],
+        value: 'AuthService',
+      },
+    ]);
+  });
+
+  it('keeps default and context resolution metadata in resolve envelopes', async () => {
+    const stencil = new Stencil({ projectDir });
+    await stencil.create(
+      {
+        description: 'Defaults and context template',
+        name: 'defaults-and-context',
+        version: 1,
+      },
+      'Project {{$ctx.project_name}} in {{input:mode:draft}} mode for {{input:owner}}.',
+    );
+
+    const unresolved = await runCli(['resolve', 'defaults-and-context'], '');
+    const unresolvedEnvelope = parseJson(unresolved.stdout);
+
+    expect(unresolvedEnvelope.status).toBe('needs_input');
+    expect(unresolvedEnvelope.data.inputs).toEqual([
+      {
+        defaultValue: 'draft',
+        name: 'mode',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'draft',
+      },
+      {
+        name: 'owner',
+        required: true,
+        source: 'unresolved',
+        sources: ['inline'],
+        value: '',
+      },
+    ]);
+    expect(unresolvedEnvelope.data.placeholders).toEqual([
+      { name: 'mode', source: 'default', value: 'draft' },
+      { name: 'owner', source: 'unresolved', value: '' },
+    ]);
+    expect(unresolvedEnvelope.data.resolvedBody).not.toContain('{{$ctx.project_name}}');
+
+    const resolved = await runCli(['resolve', 'defaults-and-context', 'owner=Platform'], '');
+    const resolvedEnvelope = parseJson(resolved.stdout);
+    expect(resolvedEnvelope.status).toBe('ok');
+    expect(resolvedEnvelope.data.inputs).toEqual([
+      {
+        defaultValue: 'draft',
+        name: 'mode',
+        required: false,
+        source: 'default',
+        sources: ['inline'],
+        value: 'draft',
+      },
+      {
+        name: 'owner',
+        required: true,
+        source: 'explicit',
+        sources: ['inline'],
+        value: 'Platform',
+      },
+    ]);
   });
 
   it('returns handled JSON errors for missing resolve templates', async () => {
