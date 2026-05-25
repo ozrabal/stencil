@@ -5,7 +5,7 @@ description: Handle the canonical /stencildelete command while delete behavior i
 
 # Purpose
 
-Handle `/stencildelete` using the same routing contract as `/stencil delete <name>`.
+Handle `/stencildelete` using the same routing contract as `/stencil delete <name>`, while keeping destructive confirmation in the Claude skill layer and deletion semantics in core.
 
 # Accepted Form
 
@@ -18,5 +18,21 @@ Handle `/stencildelete` using the same routing contract as `/stencil delete <nam
 - Require a template name as the first positional token.
 - Reject missing template names before transport invocation.
 - Reject extra positional tokens after the template name.
-- After validation, hand off to the shared shell transport path for `delete`.
-- Do not add confirmation prompts or destructive file behavior in Epic 1.
+- Inspect the target first through the shared `show` transport path.
+- If the template is found, present a concise delete preview before any mutation.
+- The delete preview must include:
+  - template name
+  - description
+  - collection when present
+  - project-local file path or clear project-local location text
+- Ask for explicit confirmation after the preview and before invoking `delete`.
+- Only on confirmation call the shared shell transport path for `delete`.
+- If the user cancels, stop without invoking `delete`.
+- Keep the public delete flow project-only for the MVP. A template that exists only outside the current project's `.stencil/` tree is treated as not found in this project.
+
+# Outcomes
+
+- If `show` reports the template is missing, stop before confirmation and report that the template was not found in the current project.
+- If `delete` returns `deleted: true`, report that the template was deleted from the project.
+- If `delete` returns `deleted: false`, report that the template no longer exists in the current project.
+- If `delete` returns `status=error`, present the handled delete failure without reinterpreting core error semantics.

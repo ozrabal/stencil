@@ -454,6 +454,34 @@ describe('Stencil.delete()', () => {
     expect(await stencil.delete('ghost')).toBe(false);
   });
 
+  it('returns false for templates that exist only in the global directory', async () => {
+    const globalProjectDir = await makeTempDir('stencil-global-delete');
+
+    try {
+      await saveTemplateInDir(
+        path.join(globalProjectDir, '.stencil'),
+        'global-only',
+        'Global body',
+      );
+      const stencilWithGlobal = new Stencil({
+        globalDir: path.join(globalProjectDir, '.stencil'),
+        projectDir,
+      });
+
+      expect(await stencilWithGlobal.get('global-only')).toMatchObject({
+        frontmatter: { name: 'global-only' },
+        source: 'global',
+      });
+      expect(await stencilWithGlobal.delete('global-only')).toBe(false);
+      expect(await stencilWithGlobal.get('global-only')).toMatchObject({
+        frontmatter: { name: 'global-only' },
+        source: 'global',
+      });
+    } finally {
+      await rm(globalProjectDir, { force: true, recursive: true });
+    }
+  });
+
   it('does not affect other templates', async () => {
     await stencil.create(makeFrontmatter('keeper'), 'keep me');
     await stencil.create(makeFrontmatter('goner'), 'delete me');

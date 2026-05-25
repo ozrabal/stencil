@@ -2,7 +2,7 @@
 
 This document gives a manual end-to-end test flow for the Stencil Claude Code adapter.
 
-It is intentionally written as a copy-paste script so you can run the public slash commands in Claude and verify the real `init -> create -> show -> run` path, including conversational completion for missing required inputs.
+It is intentionally written as a copy-paste script so you can run the public slash commands in Claude and verify the real `init -> create -> show -> run -> delete` path, including conversational completion for missing required inputs and explicit confirmation before destructive mutation.
 
 ## Prerequisites
 
@@ -22,6 +22,7 @@ Use a fresh scratch project or a test folder that does not already contain:
 - `.stencil/templates/review-checklist.md`
 - `.stencil/templates/legacy-review.md`
 - `.stencil/templates/cancelled-template.md`
+- `.stencil/templates/delete-me.md`
 
 ## Happy Path Script
 
@@ -154,6 +155,66 @@ Expected result:
 
 - Claude stops cleanly
 - no further execution handoff happens
+
+### 7. Delete The Template With Explicit Confirmation
+
+```text
+/stencildelete review-checklist
+```
+
+Expected result:
+
+- Claude inspects the template before deletion
+- the preview includes the template name, description, collection when present, and the project-local file path or project-local location
+- Claude uses explicit destructive wording before deletion
+- Claude asks for confirmation before invoking delete
+
+Confirm the deletion.
+
+Expected result after confirmation:
+
+- Claude reports that `review-checklist` was deleted from the current project
+- `/stencilshow review-checklist` now reports that the template is not found
+
+### 8. Cancel The Delete Flow
+
+Recreate the template first if needed, then run:
+
+```text
+/stencildelete review-checklist
+```
+
+Decline the confirmation.
+
+Expected result:
+
+- Claude reports that deletion was cancelled
+- Claude does not invoke delete
+- `/stencilshow review-checklist` still succeeds afterward
+
+### 9. Missing Template Delete
+
+```text
+/stencildelete does-not-exist
+```
+
+Expected result:
+
+- Claude stops before any confirmation prompt
+- Claude reports that the template was not found in the current project
+
+### 10. Repeat Delete After Success
+
+After deleting a real template once, run:
+
+```text
+/stencildelete review-checklist
+```
+
+Expected result:
+
+- if the template is already gone during the initial inspection, Claude reports it as not found in the current project
+- if a race occurs after confirmation and core returns `deleted: false`, Claude reports that the template no longer exists in the current project
 
 ## Legacy Placeholder Variant
 

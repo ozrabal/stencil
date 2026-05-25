@@ -18,6 +18,8 @@ const routerSkillPath = path.join(packageRoot, 'skills', 'stencil', 'SKILL.md');
 const routerSkill = readFileSync(routerSkillPath, 'utf8');
 const runSkillPath = path.join(packageRoot, 'skills', 'stencil-run', 'SKILL.md');
 const runSkill = readFileSync(runSkillPath, 'utf8');
+const deleteSkillPath = path.join(packageRoot, 'skills', 'stencil-delete', 'SKILL.md');
+const deleteSkill = readFileSync(deleteSkillPath, 'utf8');
 const commandScriptPath = path.join(packageRoot, 'scripts', 'stencil-command.sh');
 
 function runCommand(args) {
@@ -53,6 +55,15 @@ test('run skill documents needs_input handling and explicit execution confirmati
   assert.match(runSkill, /ask only for unresolved required inputs/i);
   assert.match(runSkill, /explicit user confirmation before executing the resolved prompt/i);
   assert.match(runSkill, /user cancels/i);
+});
+
+test('delete skill documents preview, explicit confirmation, cancellation, and project-only scope', () => {
+  assert.match(deleteSkill, /Inspect the target first through the shared `show` transport path\./);
+  assert.match(deleteSkill, /present a concise delete preview before any mutation/i);
+  assert.match(deleteSkill, /Ask for explicit confirmation .* before invoking `delete`\./i);
+  assert.match(deleteSkill, /If the user cancels, stop without invoking `delete`\./);
+  assert.match(deleteSkill, /project-only for the MVP/i);
+  assert.match(deleteSkill, /`deleted: false`/);
 });
 
 test('skill frontmatter names match the canonical direct command surface', () => {

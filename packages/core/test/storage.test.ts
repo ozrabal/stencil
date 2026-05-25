@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -448,6 +448,28 @@ describe('LocalStorageProvider deleteTemplate', () => {
 
     expect(await storage.deleteTemplate('col-template')).toBe(true);
     expect(await storage.templateExists('col-template')).toBe(false);
+  });
+
+  it('wraps filesystem delete failures in StorageOperationError', async () => {
+    const storage = new LocalStorageProvider(tmpDir);
+    await storage.saveTemplate(makeTemplate({ name: 'locked-template' }));
+    const templatesDir = path.join(tmpDir, 'templates');
+
+    await chmod(templatesDir, 0o555);
+
+    try {
+      await expect(storage.deleteTemplate('locked-template')).rejects.toSatisfy(
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(StorageOperationError);
+          expect((error as StorageOperationError).code).toBe(StencilErrorCode.STORAGE_DELETE_ERROR);
+          expect((error as StorageOperationError).operation).toBe('delete');
+          expect((error as StorageOperationError).templateName).toBe('locked-template');
+          return true;
+        },
+      );
+    } finally {
+      await chmod(templatesDir, 0o755);
+    }
   });
 });
 

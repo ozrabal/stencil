@@ -173,6 +173,7 @@ function handleValidationError(
 function handleStencilError(command: StencilCliCommand, error: StencilError): StencilCliEnvelope {
   switch (command) {
     case 'create':
+    case 'delete':
     case 'resolve':
     case 'show':
     case 'validate':

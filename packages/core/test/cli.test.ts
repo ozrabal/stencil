@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -395,6 +395,50 @@ describe('CLI runner', () => {
     const missing = parseJson((await runCli(['delete', 'alpha'], '')).stdout);
     expect(missing.status).toBe('ok');
     expect(missing.data.deleted).toBe(false);
+  });
+
+  it('treats global-only templates as missing in project-only delete mode', async () => {
+    const globalDir = await makeTempDir('stencil-global');
+
+    try {
+      await saveTemplateInStorageRoot(globalDir, 'global-only', 'Global body');
+
+      const result = await runCli(['delete', '--project-only', 'global-only'], '', { globalDir });
+      const envelope = parseJson(result.stdout);
+
+      expect(envelope.status).toBe('ok');
+      expect(envelope.command).toBe('delete');
+      expect(envelope.data).toEqual({
+        deleted: false,
+        templateName: 'global-only',
+      });
+    } finally {
+      await rm(globalDir, { force: true, recursive: true });
+    }
+  });
+
+  it('returns handled JSON errors for delete filesystem failures', async () => {
+    await createTemplate('locked', 'Locked body');
+    const templatesDir = path.join(projectDir, '.stencil', 'templates');
+
+    await chmod(templatesDir, 0o555);
+
+    try {
+      const result = await runCli(['delete', 'locked'], '');
+      const envelope = parseJson(result.stdout);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(envelope.status).toBe('error');
+      expect(envelope.command).toBe('delete');
+      expect(envelope.error.code).toBe('STORAGE_DELETE_ERROR');
+      expect(envelope.data).toEqual({
+        operation: 'delete',
+        templateName: 'locked',
+      });
+    } finally {
+      await chmod(templatesDir, 0o755);
+    }
   });
 
   it('returns adapter-agnostic context detection data', async () => {

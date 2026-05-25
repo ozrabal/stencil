@@ -79,6 +79,7 @@ Ownership boundaries:
 - `/stencilcreate <name>` should run as a conversational authoring flow that gathers the template description, optional tags, a Markdown body, and only the placeholder metadata needed for the MVP
 - `/stencilshow <name>` should present template metadata, parsed body token summaries when available, placeholders, body, and validation warnings from core
 - `/stencilrun <name> [key=value ...]` should stay transport-backed, resolve through core, collect only unresolved required inputs conversationally, and ask for final confirmation before executing the resolved prompt
+- `/stencildelete <name>` should inspect the target through `show`, present a destructive preview, require explicit confirmation, and only then invoke `delete`
 - Skills own that presentation layer; shell scripts continue to forward JSON only
 
 ## Run Contract
@@ -110,6 +111,34 @@ Completion handoff:
 - after full resolution, present a concise provenance summary for explicit, conversational, context, and default values
 - show the resolved prompt in a fenced block
 - require explicit confirmation before continuing with the resolved prompt as the next task
+
+## Delete Contract
+
+`/stencildelete <name>` is the public destructive flow.
+
+Deletion ownership:
+
+- core owns template lookup semantics, project-local deletion, and structured delete errors
+- the Claude skill owns destructive wording, preview presentation, confirmation, and cancellation handling
+- shell scripts only validate command shape and forward `show` and `delete` through the shared bridge
+
+Delete flow:
+
+1. inspect the target through `show`
+2. if found, present a concise delete preview with the name, description, collection when present, and project-local file path
+3. ask for explicit confirmation that the project-local template file should be removed
+4. only on confirmation invoke `delete`
+
+Handled delete outcomes:
+
+- if the initial `show` path reports `status=error`, stop and report that the template was not found in the current project
+- if `delete` returns `deleted: true`, report that the template was deleted
+- if `delete` returns `deleted: false`, report that the template no longer exists in the current project
+- if `delete` returns `status=error`, report that deletion failed and surface the handled storage or filesystem context
+
+Cancellation rule:
+
+- if the user declines confirmation, stop without invoking `delete`
 
 ## Conversational Create Contract
 
@@ -199,6 +228,22 @@ Expected behavior:
 - Claude asks only for unresolved required inputs
 - Claude does not ask for values already satisfied by `$ctx.*` or defaults
 - Claude shows the final resolved prompt and asks for explicit confirmation before execution
+
+The intended Epic 6 delete path is:
+
+```text
+/stencilinit
+/stencilcreate review-checklist
+/stencilshow review-checklist
+/stencildelete review-checklist
+```
+
+Expected behavior:
+
+- Claude previews the existing project-local template before deletion
+- Claude makes the destructive action explicit
+- Claude invokes delete only after confirmation
+- Claude reports a clear deleted, cancelled, not-found, or delete-failed outcome
 
 ## Validation
 

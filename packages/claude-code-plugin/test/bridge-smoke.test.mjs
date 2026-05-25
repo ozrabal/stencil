@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -234,6 +234,54 @@ test('bridge list and show stay project-only even when HOME has global templates
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
     rmSync(homeDir, { force: true, recursive: true });
+  }
+});
+
+test('bridge delete stays project-only even when HOME has global templates', () => {
+  const projectDir = makeTempProject();
+  const homeDir = mkdtempSync(path.join(os.tmpdir(), 'stencil-claude-home-'));
+
+  try {
+    writeTemplate(path.join(homeDir, '.stencil'), 'global-only', 'Global body');
+    parseJsonStdout(runBridge(projectDir, ['init'], { env: { HOME: homeDir } }));
+
+    const deleteEnvelope = parseJsonStdout(
+      runBridge(projectDir, ['delete', 'global-only'], { env: { HOME: homeDir } }),
+    );
+    assert.equal(deleteEnvelope.command, 'delete');
+    assert.equal(deleteEnvelope.status, 'ok');
+    assert.deepEqual(deleteEnvelope.data, {
+      deleted: false,
+      templateName: 'global-only',
+    });
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+    rmSync(homeDir, { force: true, recursive: true });
+  }
+});
+
+test('bridge delete surfaces handled filesystem failures', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    writeTemplate(path.join(projectDir, '.stencil'), 'locked-template', 'Locked body');
+    const templatesDir = path.join(projectDir, '.stencil', 'templates');
+    chmodSync(templatesDir, 0o555);
+
+    try {
+      const deleteEnvelope = parseJsonStdout(runBridge(projectDir, ['delete', 'locked-template']));
+      assert.equal(deleteEnvelope.command, 'delete');
+      assert.equal(deleteEnvelope.status, 'error');
+      assert.equal(deleteEnvelope.error.code, 'STORAGE_DELETE_ERROR');
+      assert.deepEqual(deleteEnvelope.data, {
+        operation: 'delete',
+        templateName: 'locked-template',
+      });
+    } finally {
+      chmodSync(templatesDir, 0o755);
+    }
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
   }
 });
 
