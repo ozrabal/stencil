@@ -30,5 +30,6 @@ Handle `/stencilshow` using the same routing contract as `/stencil show <name>`,
   - placeholder summary when placeholders exist
   - the template body in a fenced Markdown block
 - If `data.validation.valid` is `true` but `data.validation.issues` contains warnings, surface those warnings explicitly.
+- After a successful inspection, point the user to `/stencilrun <name>` or back to `/stencillist`.
 - If `status` is `error`, show the handled error and point the user back to `/stencillist`.
 - Do not re-run validation or reinterpret warning semantics in the skill layer.

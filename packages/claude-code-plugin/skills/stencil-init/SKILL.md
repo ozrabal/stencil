@@ -29,6 +29,12 @@ Handle `/stencilinit` using the same routing contract as `/stencil init`, then p
   - `/stencilshow quick-fix`
   - `/stencilrun quick-fix ...`
   - `/stencilcreate <name>`
-- If `status` is `ok` and `data.alreadyExisted` is `true`, use a shorter already-initialized response and point the user to `/stencillist` or `/stencilshow <name>`.
+- If `status` is `ok` and `data.alreadyExisted` is `true`, use a shorter already-initialized response.
+- In that already-initialized path, point the user to:
+  - `/stencillist`
+  - `/stencilshow <name>`
+  - `/stencilrun <name> ...`
+  - `/stencilcreate <name>`
 - If `status` is `error`, show the handled error plainly and stop.
+- Do not infer bootstrap state from the filesystem. Distinguish only first bootstrap, already initialized, and handled failure because those are the states the bridge actually returns.
 - Keep formatting and guidance in the skill layer. Do not move presentation into shell output.

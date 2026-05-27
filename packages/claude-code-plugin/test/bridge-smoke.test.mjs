@@ -62,6 +62,23 @@ test('init returns handled JSON and creates the bootstrap sample', () => {
   }
 });
 
+test('init returns a stable already-initialized envelope on the second run', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    parseJsonStdout(runBridge(projectDir, ['init']));
+
+    const secondInitEnvelope = parseJsonStdout(runBridge(projectDir, ['init']));
+    assert.equal(secondInitEnvelope.command, 'init');
+    assert.equal(secondInitEnvelope.status, 'ok');
+    assert.equal(secondInitEnvelope.data.alreadyExisted, true);
+    assert.equal(secondInitEnvelope.data.sampleTemplateCreated, false);
+    assert.deepEqual(secondInitEnvelope.data.createdPaths, []);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
 test('init, list, show, create, run, validate, and delete flow across the real bridge', () => {
   const projectDir = makeTempProject();
 
@@ -207,6 +224,21 @@ test('init, list, show, create, run, validate, and delete flow across the real b
   }
 });
 
+test('bridge list returns an honest empty project-local result when no templates exist', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    mkdirSync(path.join(projectDir, '.stencil', 'templates'), { recursive: true });
+
+    const envelope = parseJsonStdout(runBridge(projectDir, ['list']));
+    assert.equal(envelope.command, 'list');
+    assert.equal(envelope.status, 'ok');
+    assert.deepEqual(envelope.data.templates, []);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
 test('bridge list and show stay project-only even when HOME has global templates', () => {
   const projectDir = makeTempProject();
   const homeDir = mkdtempSync(path.join(os.tmpdir(), 'stencil-claude-home-'));
@@ -234,6 +266,22 @@ test('bridge list and show stay project-only even when HOME has global templates
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
     rmSync(homeDir, { force: true, recursive: true });
+  }
+});
+
+test('bridge show returns handled not-found JSON for missing project-local templates', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    const envelope = parseJsonStdout(runBridge(projectDir, ['show', 'ghost']));
+    assert.equal(envelope.command, 'show');
+    assert.equal(envelope.status, 'error');
+    assert.equal(envelope.error.code, 'TEMPLATE_NOT_FOUND');
+    assert.deepEqual(envelope.data, {
+      templateName: 'ghost',
+    });
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
   }
 });
 
@@ -305,6 +353,31 @@ test('validate returns validation_failed JSON for broken templates', () => {
   }
 });
 
+test('create returns validation_failed JSON for invalid payloads that reach core validation', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    const createPayload = JSON.stringify({
+      body: 'Body',
+      frontmatter: {
+        description: '',
+        name: 'bad-template',
+        version: 1,
+      },
+    });
+
+    const envelope = parseJsonStdout(
+      runBridge(projectDir, ['create', 'bad-template'], { stdin: createPayload }),
+    );
+    assert.equal(envelope.command, 'create');
+    assert.equal(envelope.status, 'validation_failed');
+    assert.equal(envelope.error, null);
+    assert.equal(envelope.issues.length > 0, true);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
 test('show surfaces validation warnings from core without converting them into errors', () => {
   const projectDir = makeTempProject();
 
@@ -321,6 +394,44 @@ test('show surfaces validation warnings from core without converting them into e
     assert.equal(envelope.status, 'ok');
     assert.equal(envelope.data.validation.valid, true);
     assert.equal(envelope.data.validation.issues.length > 0, true);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('run returns handled not-found JSON for missing templates', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    const envelope = parseJsonStdout(runBridge(projectDir, ['run', 'ghost']));
+    assert.equal(envelope.command, 'resolve');
+    assert.equal(envelope.status, 'error');
+    assert.equal(envelope.error.code, 'TEMPLATE_NOT_FOUND');
+    assert.deepEqual(envelope.data, {
+      templateName: 'ghost',
+    });
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('run returns validation_failed JSON for broken templates', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    mkdirSync(path.join(projectDir, '.stencil', 'templates'), { recursive: true });
+    writeFileSync(
+      path.join(projectDir, '.stencil', 'templates', 'broken.md'),
+      ['---', 'name: broken', 'description: ""', 'version: 1', '---', '', 'Body {{input:owner}}'].join('\n'),
+      'utf8',
+    );
+
+    const envelope = parseJsonStdout(runBridge(projectDir, ['run', 'broken']));
+    assert.equal(envelope.command, 'resolve');
+    assert.equal(envelope.status, 'validation_failed');
+    assert.equal(envelope.error, null);
+    assert.equal(envelope.data.templateName, 'broken');
+    assert.equal(envelope.issues.length > 0, true);
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
   }
@@ -396,6 +507,52 @@ test('run preserves provenance for context and default resolved inputs', () => {
       { name: 'owner', source: 'explicit', value: 'Platform' },
     ]);
     assert.match(resolvedEnvelope.data.resolvedBody, /Platform/);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('bridge runtime failures stay on stderr with exit 70 and no JSON stdout', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    const result = runBridge(projectDir, ['list'], {
+      env: { STENCIL_CORE_CLI_PATH: '/tmp/does-not-exist.js' },
+    });
+
+    assert.equal(result.status, 70);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /Configured STENCIL_CORE_CLI_PATH does not exist/);
+  } finally {
+    rmSync(projectDir, { force: true, recursive: true });
+  }
+});
+
+test('create surfaces handled storage failures for deterministic path collisions', () => {
+  const projectDir = makeTempProject();
+
+  try {
+    mkdirSync(path.join(projectDir, '.stencil', 'templates', 'conflict.md'), { recursive: true });
+
+    const createPayload = JSON.stringify({
+      body: 'Body',
+      frontmatter: {
+        description: 'Conflict',
+        name: 'conflict',
+        version: 1,
+      },
+    });
+
+    const envelope = parseJsonStdout(
+      runBridge(projectDir, ['create', 'conflict'], { stdin: createPayload }),
+    );
+    assert.equal(envelope.command, 'create');
+    assert.equal(envelope.status, 'error');
+    assert.equal(envelope.error.code, 'STORAGE_WRITE_ERROR');
+    assert.deepEqual(envelope.data, {
+      operation: 'save',
+      templateName: 'conflict',
+    });
   } finally {
     rmSync(projectDir, { force: true, recursive: true });
   }

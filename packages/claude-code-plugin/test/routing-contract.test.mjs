@@ -16,11 +16,22 @@ const readmePath = path.join(packageRoot, 'README.md');
 const readme = readFileSync(readmePath, 'utf8');
 const routerSkillPath = path.join(packageRoot, 'skills', 'stencil', 'SKILL.md');
 const routerSkill = readFileSync(routerSkillPath, 'utf8');
+const initSkillPath = path.join(packageRoot, 'skills', 'stencil-init', 'SKILL.md');
+const initSkill = readFileSync(initSkillPath, 'utf8');
+const listSkillPath = path.join(packageRoot, 'skills', 'stencil-list', 'SKILL.md');
+const listSkill = readFileSync(listSkillPath, 'utf8');
+const showSkillPath = path.join(packageRoot, 'skills', 'stencil-show', 'SKILL.md');
+const showSkill = readFileSync(showSkillPath, 'utf8');
+const createSkillPath = path.join(packageRoot, 'skills', 'stencil-create', 'SKILL.md');
+const createSkill = readFileSync(createSkillPath, 'utf8');
 const runSkillPath = path.join(packageRoot, 'skills', 'stencil-run', 'SKILL.md');
 const runSkill = readFileSync(runSkillPath, 'utf8');
 const deleteSkillPath = path.join(packageRoot, 'skills', 'stencil-delete', 'SKILL.md');
 const deleteSkill = readFileSync(deleteSkillPath, 'utf8');
 const commandScriptPath = path.join(packageRoot, 'scripts', 'stencil-command.sh');
+const commandScript = readFileSync(commandScriptPath, 'utf8');
+const bridgeScriptPath = path.join(packageRoot, 'scripts', 'lib', 'bridge.sh');
+const bridgeScript = readFileSync(bridgeScriptPath, 'utf8');
 
 function runCommand(args) {
   return spawnSync('bash', [commandScriptPath, ...args], {
@@ -55,6 +66,35 @@ test('run skill documents needs_input handling and explicit execution confirmati
   assert.match(runSkill, /ask only for unresolved required inputs/i);
   assert.match(runSkill, /explicit user confirmation before executing the resolved prompt/i);
   assert.match(runSkill, /user cancels/i);
+});
+
+test('read-path skills document bootstrap, empty-state, warnings, and next-step guidance', () => {
+  assert.match(initSkill, /first bootstrap, already initialized, and handled failure/i);
+  assert.match(initSkill, /\/stencillist/);
+  assert.match(initSkill, /\/stencilrun <name> \.\.\./);
+
+  assert.match(listSkill, /no project templates were found/i);
+  assert.match(listSkill, /Do not claim the adapter knows whether the project is uninitialized or merely empty/i);
+  assert.match(listSkill, /\/stencilcreate <name>/);
+
+  assert.match(showSkill, /contains warnings, surface those warnings explicitly/i);
+  assert.match(showSkill, /\/stencilrun <name>/);
+  assert.match(showSkill, /\/stencillist/);
+});
+
+test('interactive skills document correction, cancellation, and handled failures', () => {
+  assert.match(createSkill, /status=validation_failed/);
+  assert.match(createSkill, /correctable template problems/i);
+  assert.match(createSkill, /If the user cancels before confirmation, stop with no file write\./);
+  assert.match(createSkill, /Do not expose raw JSON or shell details for handled `validation_failed` or `error` outcomes\./);
+
+  assert.match(runSkill, /A declined final confirmation is a clean cancellation, not an error\./);
+  assert.match(runSkill, /transport\/runtime failure .* bridge failure/i);
+  assert.match(runSkill, /Do not print raw JSON or shell details for handled outcomes\./);
+
+  assert.match(deleteSkill, /Inspect the target first through the shared `show` transport path\./);
+  assert.match(deleteSkill, /Treat a declined confirmation as a clean cancellation, not an error\./);
+  assert.match(deleteSkill, /transport failure rather than a handled delete outcome/i);
 });
 
 test('delete skill documents preview, explicit confirmation, cancellation, and project-only scope', () => {
@@ -106,4 +146,19 @@ test('required positional arguments are enforced before bridge invocation', () =
   assert.equal(initResult.status, 64);
   assert.equal(initResult.stdout, '');
   assert.match(initResult.stderr, /Command "init" does not accept extra arguments\./);
+});
+
+test('docs keep the shared handled-outcome and offline-first contract visible', () => {
+  assert.match(readme, /## Handled Outcomes/);
+  assert.match(readme, /status=ok/);
+  assert.match(readme, /status=validation_failed/);
+  assert.match(readme, /status=error/);
+  assert.match(readme, /exit `64`/);
+  assert.match(readme, /exit `70`/);
+  assert.match(readme, /offline-first/i);
+});
+
+test('adapter transport scripts stay offline-first and avoid network tools', () => {
+  assert.doesNotMatch(commandScript, /\b(curl|wget)\b/);
+  assert.doesNotMatch(bridgeScript, /\b(curl|wget)\b/);
 });

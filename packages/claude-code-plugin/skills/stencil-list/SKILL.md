@@ -24,12 +24,16 @@ Handle `/stencillist` using the same routing contract as `/stencil list`, then p
 # Presentation
 
 - If `status` is `ok` and `data.templates` is empty, say no project templates were found.
-- In the empty state, suggest `/stencilinit` when the project is not bootstrapped yet; otherwise suggest `/stencilcreate <name>`.
+- In the empty state, suggest:
+  - `/stencilinit`
+  - `/stencilcreate <name>`
+- Do not claim the adapter knows whether the project is uninitialized or merely empty unless core explicitly returns that distinction.
 - If `status` is `ok` and templates exist, present one concise summary entry per template with:
   - name
   - description
   - collection when present
   - tags when present
   - version
+- When templates exist, point the user to `/stencilshow <name>` for inspection and `/stencilcreate <name>` for the next project-local template.
 - Keep bodies and validation details out of list output. Those belong to `/stencilshow <name>`.
 - If `status` is `error`, show the handled error plainly and stop.

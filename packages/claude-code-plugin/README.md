@@ -60,6 +60,40 @@ Ownership boundaries:
 - Malformed invocation errors use stderr with exit `64`
 - Transport/runtime failures use stderr with exit `70`
 
+## Handled Outcomes
+
+The Claude adapter must trust the core CLI JSON envelope as the source of truth for handled outcomes. This preserves the boundary in [docs/stencil-architecture.md](/Users/piotrlepkowski/Private/stencil/docs/stencil-architecture.md): `@stencil-pm/core` owns template semantics and structured results, while the adapter owns presentation, next-step guidance, and conversational control flow.
+
+Adapter invariants:
+
+- trust the JSON envelope instead of scraping shell text or manually inspecting `.stencil/`
+- do not print raw JSON in Claude-facing responses
+- do not expose shell internals unless the failure is a real transport/runtime failure outside the JSON envelope
+- keep follow-up bridge calls explicit and contract-driven, such as delete preview via `show` before `delete`
+- keep MVP flows offline-first and local-file-backed
+
+Shared outcome meanings:
+
+- `status=ok`: the command succeeded and Claude should present the returned data plus the next useful command
+- `status=needs_input`: only `resolve`/`run` uses this; Claude should ask only for unresolved required inputs from `data.inputs`, then re-run the same transport-backed resolve flow
+- `status=validation_failed`: core found correctable template issues; Claude should surface the issues plainly and stop or request correction without guessing repairs
+- `status=error`: core handled the failure and returned a typed domain or storage error; Claude should present the handled error clearly and stop
+- exit `64`: the public adapter invocation was malformed and failed on stderr before the bridge invoked core
+- exit `70`: the bridge failed before any handled JSON envelope existed, such as a missing or broken core CLI path
+
+## Command Outcome Matrix
+
+| Command  | `status=ok`                                                 | `status=needs_input`              | `status=validation_failed`       | `status=error`                            | exit `64` / exit `70`                   |
+| -------- | ----------------------------------------------------------- | --------------------------------- | -------------------------------- | ----------------------------------------- | --------------------------------------- |
+| `init`   | bootstrap succeeded or project was already initialized      | never                             | never                            | handled bootstrap or storage failure      | malformed args / bridge runtime failure |
+| `list`   | template summaries, including an empty list                 | never                             | never                            | handled list or read failure              | malformed args / bridge runtime failure |
+| `show`   | template detail, body, and validation warnings when present | never                             | never                            | handled not-found or read failure         | malformed args / bridge runtime failure |
+| `create` | template saved                                              | never                             | draft is invalid but correctable | handled conflict or storage failure       | malformed args / bridge runtime failure |
+| `run`    | fully resolved prompt ready for final confirmation          | unresolved required inputs remain | template is invalid for resolve  | handled not-found or other domain failure | malformed args / bridge runtime failure |
+| `delete` | deleted, or `deleted: false` when already gone              | never                             | never                            | handled delete or storage failure         | malformed args / bridge runtime failure |
+
+Handled outcomes stay in the Claude conversation. Stderr-only failures with exit `64` or exit `70` remain transport failures because they happen before or outside the handled JSON contract.
+
 ## Bridge Behavior
 
 - One public command surface: `/stencil`, `/stencilinit`, `/stencilcreate`, `/stencillist`, `/stencilshow`, `/stencilrun`, `/stencildelete`
@@ -81,6 +115,12 @@ Ownership boundaries:
 - `/stencilrun <name> [key=value ...]` should stay transport-backed, resolve through core, collect only unresolved required inputs conversationally, and ask for final confirmation before executing the resolved prompt
 - `/stencildelete <name>` should inspect the target through `show`, present a destructive preview, require explicit confirmation, and only then invoke `delete`
 - Skills own that presentation layer; shell scripts continue to forward JSON only
+
+Read-path presentation rules:
+
+- `/stencilinit` should distinguish only states the bridge returns: first bootstrap, already initialized, or handled failure
+- `/stencillist` should say no project templates were found and suggest `/stencilinit` or `/stencilcreate <name>` without claiming more than the envelope proves
+- `/stencilshow <name>` should surface validation warnings from core without revalidating or reinterpreting them
 
 ## Run Contract
 
@@ -191,6 +231,12 @@ Failure handling:
 - `error` means handled domain failure such as name conflict or storage failure
 - overwrite stays out of scope
 
+Runtime boundary:
+
+- handled filesystem failures remain JSON `status=error` outcomes
+- malformed public invocations remain exit `64` stderr failures
+- bridge/runtime failures such as a missing `STENCIL_CORE_CLI_PATH` remain exit `70` stderr failures
+
 ## Bootstrap Contract
 
 The handled `init` JSON includes:
@@ -251,10 +297,20 @@ Run the adapter checks with:
 
 ```bash
 pnpm --filter @stencil-pm/core build
+pnpm --filter @stencil-pm/core test
+pnpm --filter @stencil-pm/claude-code-plugin lint
 pnpm --filter @stencil-pm/claude-code-plugin test
 bash -n packages/claude-code-plugin/scripts/*.sh
 bash -n packages/claude-code-plugin/scripts/lib/*.sh
 ```
+
+Release gate before shipment:
+
+- `pnpm --filter @stencil-pm/core build`
+- `pnpm --filter @stencil-pm/core test`
+- `pnpm --filter @stencil-pm/claude-code-plugin lint`
+- `pnpm --filter @stencil-pm/claude-code-plugin test`
+- no network prerequisite should be required for MVP validation or public command flows
 
 For a manual Claude Code walkthrough, see [docs/testing-in-claude.md](/Users/piotrlepkowski/Private/stencil/packages/claude-code-plugin/docs/testing-in-claude.md).
 

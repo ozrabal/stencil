@@ -85,10 +85,12 @@ The provenance summary must come from `data.inputs` and `data.placeholders`, not
 - If `status` is `validation_failed`, surface the validation issues as correctable template problems and stop.
 - If `status` is `error`, show the handled error clearly and stop.
 - If the template is not found, point the user back to `/stencillist` or `/stencilshow <name>`.
-- Do not print raw JSON or shell details in user-facing output.
+- If a transport/runtime failure happens outside the JSON envelope, explain that it is a bridge failure rather than a handled template outcome.
+- Do not print raw JSON or shell details for handled outcomes.
 
 # Execution Handoff
 
 - After a successful resolve, require explicit user confirmation before executing the resolved prompt.
 - If the user confirms, continue the Claude conversation using the resolved prompt as the next task instruction.
 - If the user declines at the final confirmation step, stop without executing the resolved prompt.
+- A declined final confirmation is a clean cancellation, not an error.

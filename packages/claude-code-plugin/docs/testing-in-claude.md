@@ -4,12 +4,27 @@ This document gives a manual end-to-end test flow for the Stencil Claude Code ad
 
 It is intentionally written as a copy-paste script so you can run the public slash commands in Claude and verify the real `init -> create -> show -> run -> delete` path, including conversational completion for missing required inputs and explicit confirmation before destructive mutation.
 
+## Handled Outcomes And Boundaries
+
+Use the package README contract while testing:
+
+- `status=ok`: Claude presents the success result and the next useful command
+- `status=needs_input`: Claude asks only for unresolved required inputs returned by core
+- `status=validation_failed`: Claude surfaces correctable template issues without raw JSON
+- `status=error`: Claude surfaces the handled domain or filesystem failure plainly
+- exit `64`: malformed public invocation; this fails on stderr before bridge execution
+- exit `70`: bridge/runtime failure before JSON exists, such as a missing core CLI path
+
+The MVP remains offline-first. Public Claude flows should depend only on local files plus the bundled or workspace `@stencil-pm/core` CLI.
+
 ## Prerequisites
 
 From the repo root:
 
 ```bash
 pnpm --filter @stencil-pm/core build
+pnpm --filter @stencil-pm/core test
+pnpm --filter @stencil-pm/claude-code-plugin lint
 pnpm --filter @stencil-pm/claude-code-plugin test
 ```
 
@@ -39,6 +54,7 @@ Expected result:
 - Claude reports that Stencil was initialized, or that it was already initialized
 - the project now has a local `.stencil/` directory
 - the sample `quick-fix` template is available unless the workspace already had project-local templates
+- Claude points to `/stencillist`, `/stencilshow quick-fix`, `/stencilrun quick-fix ...`, or `/stencilcreate <name>`
 
 ### 2. Create An Inline-Input Template
 
@@ -203,7 +219,18 @@ Expected result:
 - Claude stops before any confirmation prompt
 - Claude reports that the template was not found in the current project
 
-### 10. Repeat Delete After Success
+### 10. Missing Template Show
+
+```text
+/stencilshow does-not-exist
+```
+
+Expected result:
+
+- Claude reports the handled not-found error plainly
+- Claude points back to `/stencillist`
+
+### 11. Repeat Delete After Success
 
 After deleting a real template once, run:
 
@@ -383,6 +410,49 @@ Expected result:
 - the template is not found
 - no file was written
 
+### Validation Failure Path
+
+Create a deliberately invalid draft, such as a blank description or an invalid inline token like `{{input:}}`.
+
+Expected result:
+
+- Claude surfaces a `validation_failed` outcome as a correctable template problem
+- Claude does not print raw JSON
+- Claude asks for revision instead of pretending the template was saved
+
+## Failure Environment Checks
+
+### Bridge Runtime Failure
+
+From the repo root:
+
+```bash
+STENCIL_CORE_CLI_PATH=/tmp/does-not-exist.js \
+  bash packages/claude-code-plugin/scripts/stencil-command.sh list
+```
+
+Expected result:
+
+- stderr explains that the configured `STENCIL_CORE_CLI_PATH` does not exist
+- the command exits with `70`
+- no JSON is printed to stdout
+
+### Local Filesystem Mutation Failure
+
+Use a scratch workspace and create a deterministic path collision before running `/stencilcreate conflict`.
+
+Recommended setup:
+
+```bash
+mkdir -p .stencil/templates/conflict.md
+```
+
+Expected result:
+
+- Claude surfaces a handled filesystem/storage failure plainly
+- the failure remains a JSON `status=error` outcome
+- Claude does not expose raw shell internals because this is not a bridge runtime failure
+
 ## Minimal No-Placeholder Template
 
 This is the lightest successful create case.
@@ -434,23 +504,20 @@ Expected result:
 
 If Claude commands fail unexpectedly:
 
-1. Rebuild core:
+1. Rebuild core and rerun the local acceptance gate:
 
 ```bash
 pnpm --filter @stencil-pm/core build
-```
-
-2. Re-run adapter tests:
-
-```bash
+pnpm --filter @stencil-pm/core test
+pnpm --filter @stencil-pm/claude-code-plugin lint
 pnpm --filter @stencil-pm/claude-code-plugin test
 ```
 
-3. Check shell syntax:
+2. Check shell syntax:
 
 ```bash
 bash -n packages/claude-code-plugin/scripts/*.sh
 bash -n packages/claude-code-plugin/scripts/lib/*.sh
 ```
 
-4. If `show` does not reflect recent core contract changes, verify `packages/core/dist/cli.js` was rebuilt.
+3. If `show` does not reflect recent core contract changes, verify `packages/core/dist/cli.js` was rebuilt.

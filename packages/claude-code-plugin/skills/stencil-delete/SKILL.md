@@ -29,6 +29,7 @@ Handle `/stencildelete` using the same routing contract as `/stencil delete <nam
 - Only on confirmation call the shared shell transport path for `delete`.
 - If the user cancels, stop without invoking `delete`.
 - Keep the public delete flow project-only for the MVP. A template that exists only outside the current project's `.stencil/` tree is treated as not found in this project.
+- Treat a declined confirmation as a clean cancellation, not an error.
 
 # Outcomes
 
@@ -36,3 +37,4 @@ Handle `/stencildelete` using the same routing contract as `/stencil delete <nam
 - If `delete` returns `deleted: true`, report that the template was deleted from the project.
 - If `delete` returns `deleted: false`, report that the template no longer exists in the current project.
 - If `delete` returns `status=error`, present the handled delete failure without reinterpreting core error semantics.
+- If a bridge/runtime failure happens before JSON is returned, explain that it is a transport failure rather than a handled delete outcome.

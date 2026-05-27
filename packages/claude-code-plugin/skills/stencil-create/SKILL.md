@@ -111,7 +111,8 @@ Require an explicit user confirmation before save.
 
 - If the user cancels before confirmation, stop with no file write.
 - If core returns `status=validation_failed`, surface the issues as correctable template problems and ask the user to revise the body or metadata.
-- If core returns `status=error` with a conflict or invalid-name failure, explain the handled error and ask the user to retry with a different valid template name.
+- If core returns `status=error` with a conflict, invalid-name failure, or handled storage failure, explain the handled error plainly and stop or ask the user to retry with a different valid template name when that guidance fits the returned error.
+- Do not expose raw JSON or shell details for handled `validation_failed` or `error` outcomes.
 - Do not implement overwrite behavior in this flow.
 
 # Success Path
